@@ -1,0 +1,7 @@
+numpy
+pygame
+matplotlib
+torch
+torchvision
+Pillow
+opencv-python
