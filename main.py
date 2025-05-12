@@ -4,22 +4,32 @@ import pygame as pg
 import time
 import csv
 import torch
+import argparse
 
 from a_star import GridMapGraph, a_star_search
 from logic import Logic, Q
-from grid_map import Grid_Map, EPSILON  # Thêm import EPSILON từ grid_map
+from grid_map import Grid_Map, EPSILON
 from obstacle_classifier import ObstacleClassifier
 from dynamic_obstacle_handler import DynamicObstacleHandler
 from virtual_camera import VirtualCamera
+from dynamic_obstacles_manager import DynamicObstaclesManager
+
+# Xử lý tham số dòng lệnh
+parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
+parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
+parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
+parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
+args = parser.parse_args()
 
 # coverage:             1 unit of energy / cell width
 # advance & retreat:    0.5 unit of energy / cell width
-ENERGY_CAPACITY = 1000
+ENERGY_CAPACITY = args.energy
 
 ui = Grid_Map()
-ui.read_map('map/real_map/cantwell.txt')
+ui.read_map(args.map)
 ENVIRONMENT, battery_pos = ui.edit_map()
-# ui.save_map('map/empty_map.txt') 
+# ui.save_map('map/empty_map.txt')
 
 ROW_COUNT = len(ENVIRONMENT)
 COL_COUNT = len(ENVIRONMENT[0])
@@ -32,6 +42,7 @@ return_charge_count = 1
 count_cell_go_through = 1
 deadlock_count = 0
 extreme_deadlock_count = 0
+dynamic_wait_count = 0  # Đếm số lần robot phải chờ do vật cản động
 execute_time = time.time()
 
 # Find special area
@@ -91,6 +102,7 @@ class Robot:
         self.waiting = False
         self.wait_time = 0
         self.wait_start_time = 0
+        self.wait_reason = ""  # Lý do chờ đợi để hiển thị
 
         # Previous camera image for motion detection
         self.previous_camera_image = None
@@ -107,14 +119,35 @@ class Robot:
         self.logic.set_weight_map(environment)
 
     def run(self):
-        global FPS, deadlock_count, extreme_deadlock_count
+        global FPS, deadlock_count, extreme_deadlock_count, dynamic_wait_count
         clock = pg.time.Clock()
         run = True
         pause = False
         coverage_finish = False
 
+        # Biến theo dõi thời gian cho vật cản động
+        last_time = time.time()
+
         while run:
+            # Tính delta time cho vật cản động
+            current_time = time.time()
+            delta_time = current_time - last_time
+            last_time = current_time
+
+            # Cập nhật vật cản động
+            dynamic_obstacles.update(delta_time)
+
             ui.draw()
+
+            # Vẽ thêm vật cản động
+            dynamic_obstacles.draw(ui.WIN)
+            pg.display.flip()
+            # Show thêm thông so cho doi
+            if self.waiting:
+                waiting_text = f"Waiting: {self.wait_reason} ({round(self.wait_time - (current_time - self.wait_start_time), 1)}s)"
+                waiting_img = pg.font.SysFont(None, 24).render(waiting_text, True, (255, 0, 0))
+                ui.WIN.blit(waiting_img, (10, 10))
+
             clock.tick(FPS)
             for event in pg.event.get():
                 if event.type == pg.KEYDOWN:
@@ -131,7 +164,6 @@ class Robot:
             if pause:
                 continue
 
-            # Handle waiting state for dynamic obstacles
             if self.waiting:
                 current_time = time.time()
                 if current_time - self.wait_start_time >= self.wait_time:
@@ -158,6 +190,18 @@ class Robot:
             # Detect and classify obstacles
             self.detect_and_classify_obstacles()
 
+            # Cập nhật thông tin vật cản động từ dynamic_obstacles_manager
+            for obstacle in dynamic_obstacles.obstacles:
+                pos = obstacle['pos']
+                obstacle_id = obstacle['id']
+                self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos)
+                # Đánh dấu vị trí là vật cản động trong bản đồ
+                if self.map[pos] not in ('o', 'e'):  # Không ghi đè lên vật cản tĩnh hoặc ô đã thăm
+                    self.map[pos] = 'd'
+                # Lưu thông tin phân loại
+                self.classified_obstacles[pos] = ('dynamic', 0.95)
+                self.dynamic_obstacle_ids[pos] = obstacle_id
+
             # Remove old dynamic obstacles
             self.dynamic_obstacle_handler.remove_old_obstacles()
 
@@ -173,6 +217,7 @@ class Robot:
                     # Check for potential collision with dynamic obstacles
                     if self.check_dynamic_collision(selected_cell):
                         # Collision detected, waiting implemented
+                        dynamic_wait_count += 1
                         continue
 
                     if self.check_enough_energy(selected_cell) == False:
@@ -303,14 +348,33 @@ class Robot:
             while check_energy == True and self.check_enough_energy(pos) == False:
                 self.charge_planning()
 
+            # Kiểm tra vật cản động trước khi di chuyển
+            while self.check_dynamic_collision(pos):
+                ui.draw()
+                dynamic_obstacles.draw(ui.WIN)
+                # Hiển thị thông tin chờ đợi
+                if self.waiting:
+                    waiting_text = f"Waiting: {self.wait_reason} ({round(self.wait_time - (time.time() - self.wait_start_time), 1)}s)"
+                    waiting_img = pg.font.SysFont(None, 24).render(waiting_text, True, (255, 0, 0))
+                    ui.WIN.blit(waiting_img, (10, 10))
+                pg.display.flip()
+                time.sleep(0.1)
+
+                # Cập nhật vật cản động
+                current_time = time.time()
+                if self.waiting and current_time - self.wait_start_time >= self.wait_time:
+                    self.waiting = False
+
             self.move_to(pos)
             ui.draw()
+            dynamic_obstacles.draw(ui.WIN)
 
             # Check for dynamic obstacles along the path
             if self.check_dynamic_collision(pos):
                 # Wait for obstacle to pass
                 while self.waiting:
                     ui.draw()
+                    dynamic_obstacles.draw(ui.WIN)
                     current_time = time.time()
                     if current_time - self.wait_start_time >= self.wait_time:
                         self.waiting = False
@@ -353,6 +417,7 @@ class Robot:
 
     def detect_and_classify_obstacles(self):
         """Detect and classify obstacles using the virtual camera"""
+        #return
         # Get direction from robot angle
         direction = (math.cos(self.angle), math.sin(self.angle))
 
@@ -431,6 +496,26 @@ class Robot:
 
     def check_dynamic_collision(self, target_pos):
         """Check for collision with dynamic obstacles when moving to target_pos"""
+        # Thêm code mới ở đây
+        # Kiểm tra nếu vị trí đích là vật cản tĩnh thì KHÔNG áp dụng waiting rule
+        if self.map[target_pos] in (1, 'o'):
+            return False  # Vật cản tĩnh - không chờ
+
+        # Nếu vị trí đích là vật cản động được tạo thủ công, thì áp dụng waiting rule
+        if self.map[target_pos] == 'd':
+            # Kiểm tra xem có phải vật cản động thật sự không
+            for obstacle in dynamic_obstacles.obstacles:
+                if obstacle['pos'] == target_pos:
+                    self.waiting = True
+                    self.wait_time = 2.0
+                    self.wait_start_time = time.time()
+                    self.wait_reason = f"Obstacle at target ({target_pos})"
+                    return True
+
+            # Nếu không tìm thấy trong danh sách vật cản động, đây có thể là lỗi phân loại
+            # Đánh dấu lại là ô trống
+            self.map[target_pos] = 0
+            return False
         # Calculate movement direction
         direction = (target_pos[0] - self.current_pos[0], target_pos[1] - self.current_pos[1])
         distance = math.sqrt(direction[0] ** 2 + direction[1] ** 2)
@@ -441,6 +526,15 @@ class Robot:
         # Robot speed (in cells/second)
         robot_speed = 100.0
 
+        # Check if target position is already occupied by a dynamic obstacle
+        if self.map[target_pos] == 'd':
+            self.waiting = True
+            self.wait_time = 2.0  # Chờ 2 giây nếu vị trí đích đã bị chiếm
+            self.wait_start_time = time.time()
+            self.wait_reason = f"Obstacle at target ({target_pos})"
+            print(f"Target position {target_pos} occupied by dynamic obstacle. Waiting...")
+            return True
+
         # Check and apply waiting rule if needed
         need_wait, wait_info = self.dynamic_obstacle_handler.apply_waiting_rule(
             self.current_pos, direction, robot_speed
@@ -448,6 +542,7 @@ class Robot:
 
         if need_wait:
             stop_position, wait_time = wait_info
+            self.wait_reason = "Collision predicted"
             print(f"Dynamic obstacle detected! Waiting for {wait_time:.2f} seconds")
 
             # Only move to stop position if different from current position
@@ -475,11 +570,25 @@ def main():
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
 
+    # Khởi tạo trình quản lý vật cản động
+    global dynamic_obstacles
+    dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=5, speed_factor=2.0)
+    print("Map layout:")
+    for row in range(len(ENVIRONMENT)):
+        for col in range(len(ENVIRONMENT[0])):
+            if ENVIRONMENT[row, col] == 1:
+                print(f"Static obstacle at ({row}, {col})")
+
+    print("\nDynamic obstacles:")
+    for obs in dynamic_obstacles.obstacles:
+        print(f"Dynamic obstacle at {obs['pos']} with velocity {obs['velocity']}")
     # Show information about obstacle classification
     print("Using obstacle classification with GoogLeNet")
     print(f"GPU available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU device: {torch.cuda.get_device_name(0)}")
+
+    print(f"Dynamic obstacles: {args.dynamic}")
 
     global execute_time
     execute_time = time.time()
@@ -495,6 +604,7 @@ def main():
     print('\nOverlap rate: ', overlap_rate)
     print('Number Of Return: ', return_charge_count)
     print('Number of extreme deadlock:', extreme_deadlock_count, '/', deadlock_count)
+    print('Number of dynamic obstacle waits:', dynamic_wait_count)
 
     # Add statistics about dynamic obstacles
     dynamic_count = sum(1 for val in robot.classified_obstacles.values() if val[0] == 'dynamic')
@@ -507,3 +617,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
