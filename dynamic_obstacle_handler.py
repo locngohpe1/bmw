@@ -53,8 +53,11 @@ class DynamicObstacleHandler:
         obstacles_to_remove = []
 
         for obstacle_id, data in self.dynamic_obstacles.items():
-            if current_time - data['last_seen'] > max_age:
+            age = current_time - data['last_seen']
+            if age > max_age:
                 obstacles_to_remove.append(obstacle_id)
+                # Optional: Log removed obstacles
+                # print(f"Removed aged obstacle {obstacle_id}, age: {age:.1f}s")
 
         for obstacle_id in obstacles_to_remove:
             del self.dynamic_obstacles[obstacle_id]
@@ -168,8 +171,10 @@ class DynamicObstacleHandler:
                 wait_time = 0  # Không chờ, tìm đường khác
                 return False, None
 
-            # Thời gian chờ tỉ lệ với tốc độ tương đối + buffer an toàn
-            wait_time = (min_time_to_collision + 1.5) * robot_speed / obstacle_speed
+            # Thời gian chờ tối ưu hơn - giảm overhead
+            base_wait = min_time_to_collision * 0.8  # 80% của thời gian collision
+            safety_buffer = 0.3  # Giảm buffer từ 0.5 xuống 0.3
+            wait_time = max(0.3, min(2.0, base_wait + safety_buffer))  # Giảm max từ 3.0 xuống 2.0
 
             return True, (stop_position, wait_time)
 

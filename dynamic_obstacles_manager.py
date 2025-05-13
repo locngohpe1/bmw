@@ -85,9 +85,9 @@ class DynamicObstaclesManager:
             old_pos = obstacle['pos']
             old_exact = obstacle['exact_pos']
 
-            # Tính vị trí mới
-            new_x = old_exact[0] + obstacle['velocity'][0] * delta_time * 10  # Tăng tốc độ lên 10 lần
-            new_y = old_exact[1] + obstacle['velocity'][1] * delta_time * 10
+            # Tăng tốc độ để tạo movement rõ ràng hơn
+            new_x = old_exact[0] + obstacle['velocity'][0] * delta_time * 15
+            new_y = old_exact[1] + obstacle['velocity'][1] * delta_time * 15
 
             # Kiểm tra va chạm với biên và đổi hướng nếu cần
             if new_x < 0 or new_x >= map_height:

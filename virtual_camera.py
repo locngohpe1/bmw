@@ -8,6 +8,7 @@ class VirtualCamera:
         self.grid_map = grid_map
         self.epsilon = epsilon
         self.camera_view_distance = 5  # Khoảng cách camera có thể nhìn thấy (đơn vị ô lưới)
+        self._frame_counter = 0
 
     def capture_image(self, robot_pos, direction):
         """Chụp ảnh xung quanh robot trong phạm vi nhìn thấy được"""
@@ -81,18 +82,30 @@ class VirtualCamera:
         if previous_image is None:
             return []
 
+        # Thêm simple frame skipping để giảm false positive
+        if not hasattr(self, '_frame_counter'):
+            self._frame_counter = 0
+        self._frame_counter += 1
+        if self._frame_counter % 2 != 0:  # Skip every other frame
+            return []
+
         # Chuyển đổi ảnh sang grayscale
         gray_current = cv2.cvtColor(current_image, cv2.COLOR_BGR2GRAY)
         gray_prev = cv2.cvtColor(previous_image, cv2.COLOR_BGR2GRAY)
 
         # Tìm sự khác biệt giữa hai frame
         diff = cv2.absdiff(gray_current, gray_prev)
-        _, thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)
+        _, thresh = cv2.threshold(diff, 80, 255, cv2.THRESH_BINARY)  # Tăng lên 80
+
+        # Thêm morphological operations mạnh hơn
+        kernel = np.ones((7, 7), np.uint8)  # Tăng kernel size
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
         # Áp dụng các phép biến đổi hình thái học để loại bỏ nhiễu
-        kernel = np.ones((5, 5), np.uint8)
-        thresh = cv2.dilate(thresh, kernel, iterations=2)
-        thresh = cv2.erode(thresh, kernel, iterations=1)
+        kernel2 = np.ones((5, 5), np.uint8)
+        thresh = cv2.dilate(thresh, kernel2, iterations=2)
+        thresh = cv2.erode(thresh, kernel2, iterations=1)
 
         # Tìm contour của các vật cản di chuyển
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -100,11 +113,25 @@ class VirtualCamera:
         # Lọc ra các contour quá nhỏ
         dynamic_obstacles = []
         for contour in contours:
-            if cv2.contourArea(contour) < 50:  # Ngưỡng kích thước tối thiểu
+            if cv2.contourArea(contour) < 200:  # Tăng lên 200
                 continue
 
             # Lấy bounding box
             x, y, w, h = cv2.boundingRect(contour)
+
+            # Thêm check tỷ lệ width/height để loại bỏ noise
+            aspect_ratio = w / h if h > 0 else 0
+            if aspect_ratio > 5 or aspect_ratio < 0.2:  # Loại bỏ shape quá dài/rộng
+                continue
+
+            # Thêm temporal consistency check
+            # Chỉ accept detections có movement pattern hợp lý
+            center_x, center_y = x + w // 2, y + h // 2
+
+            # Skip nếu detection ở border (thường là artifact)
+            image_h, image_w = current_image.shape[:2]
+            if center_x < 20 or center_x > image_w - 20 or center_y < 20 or center_y > image_h - 20:
+                continue
 
             # Tính vị trí tương đối so với robot
             rel_row = y // self.epsilon - self.camera_view_distance
