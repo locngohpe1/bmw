@@ -16,7 +16,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/Cantwell.txt', help='Path to map file')
 parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -500,13 +500,6 @@ class Robot:
 
                     # Save obstacle type
                     self.classified_obstacles[pos_key] = ('dynamic', 0.9)
-
-        # Comment tạm thời để debug classifier
-        # obstacles = self.obstacle_classifier.detect_and_classify_from_image(current_image)
-        # for pos, class_name, confidence in obstacles:
-        #     # ... rest of classifier logic
-
-        # Save current image for next frame
         self.previous_camera_image = current_image
 
     def check_dynamic_collision(self, target_pos):
