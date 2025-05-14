@@ -5,7 +5,7 @@ import time
 
 class DynamicObstacleHandler:
     def __init__(self):
-        self.dynamic_obstacles = {}  # Dictionary lưu thông tin vật cản động {id: {pos, velocity, ...}}
+        self.dynamic_obstacles = {}  # Dictionary lưu thông tin vật cản động {id: {pos, velocity, size, ...}}
         self.last_update_time = time.time()
 
     def register_obstacle(self, obstacle_id, position, velocity=None):
@@ -19,6 +19,7 @@ class DynamicObstacleHandler:
         self.dynamic_obstacles[obstacle_id] = {
             'position': position,
             'velocity': velocity,
+            'size': 1.0,  # Default size
             'history': [(position, current_time)],
             'last_seen': current_time
         }
@@ -116,8 +117,10 @@ class DynamicObstacleHandler:
             (closest_pos[1] - obstacle_future_pos[1]) ** 2
         )
 
-        # Ngưỡng khoảng cách an toàn (có thể điều chỉnh)
-        safety_distance = 1.0
+        # Ngưỡng khoảng cách an toàn - tính theo size của vật cản
+        obstacle_size = obstacle.get('size', 1.0)
+        robot_size = 1.0  # Assume robot cũng có size
+        safety_distance = (obstacle_size + robot_size) / 2 + 0.5  # Buffer thêm 0.5
 
         if closest_distance < safety_distance:
             # Sẽ có va chạm
@@ -171,10 +174,15 @@ class DynamicObstacleHandler:
                 wait_time = 0  # Không chờ, tìm đường khác
                 return False, None
 
-            # Thời gian chờ tối ưu hơn - giảm overhead
+            # Thêm logic động để tính wait time
             base_wait = min_time_to_collision * 0.8  # 80% của thời gian collision
-            safety_buffer = 0.3  # Giảm buffer từ 0.5 xuống 0.3
-            wait_time = max(0.3, min(2.0, base_wait + safety_buffer))  # Giảm max từ 3.0 xuống 2.0
+            safety_buffer = 0.3  # Buffer an toàn
+
+            # Điều chỉnh theo size của vật cản
+            obstacle_size = self.dynamic_obstacles[colliding_obstacle].get('size', 1.0)
+            size_factor = 1.0 + (obstacle_size - 1.0) * 0.3  # Bigger obstacles need more wait time
+
+            wait_time = max(0.3, min(2.0, (base_wait + safety_buffer) * size_factor))
 
             return True, (stop_position, wait_time)
 

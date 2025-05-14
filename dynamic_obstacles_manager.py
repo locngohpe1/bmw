@@ -51,8 +51,8 @@ class DynamicObstaclesManager:
                     random.uniform(-0.15, 0.15) * self.speed_factor
                 )
 
-            # Kích thước vật cản (đơn vị lưới)
-            size = 0.9  # Tăng kích thước để dễ thấy hơn
+            # Kích thước vật cản (đơn vị lưới) - có thể thay đổi ở đây
+            size = 0.9  # Tăng kích thước để dễ thấy hơn (có thể điều chỉnh)
 
             # Màu sắc (đỏ đậm)
             color = (255, 0, 0)
@@ -68,12 +68,34 @@ class DynamicObstaclesManager:
             }
 
             self.obstacles.append(obstacle)
-            # Đánh dấu ngay vị trí ban đầu là vật cản động
-            self.grid_map.map[pos] = 'd'
+            # Đánh dấu vị trí ban đầu với size
+            self._mark_obstacle_cells(pos, size)
 
             self.next_id += 1
 
         print(f"Created {len(self.obstacles)} dynamic obstacles")
+
+    def _clear_obstacle_cells(self, center_pos, size):
+        """Xóa tất cả cells mà vật cản chiếm"""
+        radius = int(size / 2)
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                row, col = center_pos[0] + dr, center_pos[1] + dc
+                if (0 <= row < len(self.grid_map.map) and
+                        0 <= col < len(self.grid_map.map[0]) and
+                        self.grid_map.map[row, col] == 'd'):
+                    self.grid_map.map[row, col] = 0
+
+    def _mark_obstacle_cells(self, center_pos, size):
+        """Đánh dấu tất cả cells mà vật cản chiếm"""
+        radius = int(size / 2)
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                row, col = center_pos[0] + dr, center_pos[1] + dc
+                if (0 <= row < len(self.grid_map.map) and
+                        0 <= col < len(self.grid_map.map[0]) and
+                        self.grid_map.map[row, col] not in (1, 'o', 'e')):
+                    self.grid_map.map[row, col] = 'd'
 
     def update(self, delta_time):
         """Cập nhật vị trí vật cản động theo thời gian"""
@@ -85,22 +107,37 @@ class DynamicObstaclesManager:
             old_pos = obstacle['pos']
             old_exact = obstacle['exact_pos']
 
-            # Tăng tốc độ để tạo movement rõ ràng hơn
-            new_x = old_exact[0] + obstacle['velocity'][0] * delta_time * 15
+            # Tính vị trí mới
+            new_x = old_exact[0] + obstacle['velocity'][0] * delta_time * 15  # Tăng tốc độ lên 15 lần
             new_y = old_exact[1] + obstacle['velocity'][1] * delta_time * 15
 
             # Kiểm tra va chạm với biên và đổi hướng nếu cần
-            if new_x < 0 or new_x >= map_height:
+            obstacle_radius = obstacle['size'] / 2
+            if new_x - obstacle_radius < 0 or new_x + obstacle_radius >= map_height:
                 obstacle['velocity'] = (-obstacle['velocity'][0], obstacle['velocity'][1])
                 new_x = old_exact[0]
 
-            if new_y < 0 or new_y >= map_width:
+            if new_y - obstacle_radius < 0 or new_y + obstacle_radius >= map_width:
                 obstacle['velocity'] = (obstacle['velocity'][0], -obstacle['velocity'][1])
                 new_y = old_exact[1]
 
-            # Kiểm tra va chạm với vật cản tĩnh
+            # Kiểm tra va chạm với vật cản tĩnh (check area của vật cản)
             new_cell = (int(new_x), int(new_y))
-            if new_cell != old_pos and (self.grid_map.map[new_cell] == 1 or self.grid_map.map[new_cell] == 'o'):
+            collision_with_static = False
+
+            # Check collision for entire obstacle area
+            radius = int(obstacle['size'] / 2)
+            for dr in range(-radius, radius + 1):
+                for dc in range(-radius, radius + 1):
+                    check_row, check_col = new_cell[0] + dr, new_cell[1] + dc
+                    if (0 <= check_row < map_height and 0 <= check_col < map_width):
+                        if self.grid_map.map[check_row, check_col] in (1, 'o'):
+                            collision_with_static = True
+                            break
+                if collision_with_static:
+                    break
+
+            if collision_with_static and new_cell != old_pos:
                 # Đổi hướng khi gặp vật cản
                 obstacle['velocity'] = (-obstacle['velocity'][0], -obstacle['velocity'][1])
                 new_x = old_exact[0]
@@ -111,17 +148,16 @@ class DynamicObstaclesManager:
             obstacle['exact_pos'] = (new_x, new_y)
             obstacle['pos'] = (int(new_x), int(new_y))
 
+            # Update grid map markings only if position changed
             if old_pos != obstacle['pos']:
-                # Xóa dấu hiệu vật cản ở vị trí cũ
-                if self.grid_map.map[old_pos] == 'd':
-                    self.grid_map.map[old_pos] = 0
+                # Clear old position(s) based on size
+                self._clear_obstacle_cells(old_pos, obstacle['size'])
 
-                # Đánh dấu vị trí mới là vật cản động CHỈ khi không phải vật cản tĩnh
-                if self.grid_map.map[obstacle['pos']] not in (1, 'o', 'e'):
-                    self.grid_map.map[obstacle['pos']] = 'd'
+                # Mark new position(s) based on size
+                self._mark_obstacle_cells(obstacle['pos'], obstacle['size'])
 
-                    # In thông báo để kiểm tra
-                    print(f"Dynamic obstacle moved to {obstacle['pos']}")
+                # In thông báo để kiểm tra
+                print(f"Dynamic obstacle {obstacle['id']} (size={obstacle['size']}) moved to {obstacle['pos']}")
 
     def draw(self, surface):
         """Vẽ các vật cản động lên bề mặt pygame"""
@@ -132,7 +168,36 @@ class DynamicObstaclesManager:
 
             # Vẽ hình tròn đại diện cho vật cản động với viền đen
             radius = int(obstacle['size'] * self.epsilon / 2)
-            pg.draw.circle(surface, obstacle['color'], (int(x + self.epsilon / 2), int(y + self.epsilon / 2)), radius)
-            pg.draw.circle(surface, (0, 0, 0), (int(x + self.epsilon / 2), int(y + self.epsilon / 2)), radius,
-                           2)  # Viền đen
+            center_x = int(x + self.epsilon / 2)
+            center_y = int(y + self.epsilon / 2)
 
+            # Vẽ obstacle với size thực tế
+            pg.draw.circle(surface, obstacle['color'], (center_x, center_y), radius)
+            pg.draw.circle(surface, (0, 0, 0), (center_x, center_y), radius, 2)  # Viền đen
+
+            # Vẽ ID để debug (optional)
+            # font = pg.font.Font(None, 16)
+            # text = font.render(obstacle['id'], True, (255, 255, 255))
+            # surface.blit(text, (center_x - 10, center_y - 5))
+
+    def get_obstacle_info(self, obstacle_id):
+        """Get thông tin chi tiết của vật cản theo ID"""
+        for obstacle in self.obstacles:
+            if obstacle['id'] == obstacle_id:
+                return obstacle
+        return None
+
+    def get_all_obstacle_positions(self):
+        """Trả về tất cả vị trí của các vật cản động"""
+        positions = []
+        for obstacle in self.obstacles:
+            # Trả về tất cả cells mà vật cản chiếm
+            radius = int(obstacle['size'] / 2)
+            center_pos = obstacle['pos']
+            for dr in range(-radius, radius + 1):
+                for dc in range(-radius, radius + 1):
+                    row, col = center_pos[0] + dr, center_pos[1] + dc
+                    if (0 <= row < len(self.grid_map.map) and
+                            0 <= col < len(self.grid_map.map[0])):
+                        positions.append((row, col))
+        return positions

@@ -16,8 +16,8 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/Scioto1.txt', help='Path to map file')
-parser.add_argument('--dynamic', type=int, default=5, help='Number of dynamic obstacles')
+parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
@@ -115,9 +115,6 @@ class Robot:
         self.start_time = time.time()
         self.total_moves = 0
 
-        # Detection control
-        self._detection_skip_counter = 0
-
     def set_map(self, environment):
         row_count, col_count = len(environment), len(environment[0])
         self.map = np.full((row_count, col_count), 'u')
@@ -137,8 +134,6 @@ class Robot:
             self.false_positive_count = 0
         if not hasattr(self, 'total_moves'):
             self.total_moves = 0
-        if not hasattr(self, '_detection_skip_counter'):
-            self._detection_skip_counter = 0
 
         global FPS, deadlock_count, extreme_deadlock_count, dynamic_wait_count
         clock = pg.time.Clock()
@@ -215,7 +210,15 @@ class Robot:
             for obstacle in dynamic_obstacles.obstacles:
                 pos = obstacle['pos']
                 obstacle_id = obstacle['id']
-                self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos)
+
+                # Update với size information
+                if obstacle_id not in self.dynamic_obstacle_handler.dynamic_obstacles:
+                    self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos, obstacle.get('velocity', (0, 0)))
+                    self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
+                else:
+                    self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos)
+                    self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
+
                 # Đánh dấu vị trí là vật cản động trong bản đồ
                 if self.map[pos] not in ('o', 'e'):  # Không ghi đè lên vật cản tĩnh hoặc ô đã thăm
                     self.map[pos] = 'd'
@@ -283,6 +286,10 @@ class Robot:
         self.rotate_to(pos)
         self.current_pos = pos
 
+        # Increment move counter an toàn
+        if hasattr(self, 'total_moves'):
+            self.total_moves += 1
+
         if self.move_status == 0:
             ui.move_to(pos)
             coverage_length += dist
@@ -296,10 +303,6 @@ class Robot:
         total_travel_length += dist
         if self.move_status == 0:  # coverage
             count_cell_go_through += 1
-
-        # Increment move counter an toàn
-        if hasattr(self, 'total_moves'):
-            self.total_moves += 1
 
         ui.set_energy_display(self.energy)
 
@@ -443,6 +446,8 @@ class Robot:
     def detect_and_classify_obstacles(self):
         """Detect and classify obstacles using the virtual camera"""
         # Skip detection một số frames để giảm false positive
+        if not hasattr(self, '_detection_skip_counter'):
+            self._detection_skip_counter = 0
         self._detection_skip_counter += 1
         if self._detection_skip_counter % 3 != 0:
             return
@@ -455,12 +460,12 @@ class Robot:
 
         # Detect moving obstacles
         if self.previous_camera_image is not None:
-            dynamic_obstacles = self.virtual_camera.detect_dynamic_obstacles(
+            dynamic_obstacles_detected = self.virtual_camera.detect_dynamic_obstacles(
                 current_image, self.previous_camera_image
             )
 
             # Update dynamic obstacle information
-            for (rel_row, rel_col), (width, height) in dynamic_obstacles:
+            for (rel_row, rel_col), (width, height) in dynamic_obstacles_detected:
                 # Bỏ qua detections quá gần robot (có thể là noise)
                 distance_from_robot = math.sqrt(rel_row ** 2 + rel_col ** 2)
                 if distance_from_robot < 2:  # Ignore detections trong bán kính 2 cells
@@ -481,22 +486,22 @@ class Robot:
                     self.map[pos_key] = 'd'
                     self.debug_dynamic_count += 1
 
-                # Get obstacle ID or create new
-                if pos_key in self.dynamic_obstacle_ids:
-                    obstacle_id = self.dynamic_obstacle_ids[pos_key]
-                    # Update obstacle position
-                    self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos_key)
-                else:
-                    # Register new obstacle
-                    obstacle_id = f"obs_{self.next_obstacle_id}"
-                    self.next_obstacle_id += 1
-                    self.dynamic_obstacle_ids[pos_key] = obstacle_id
-                    self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos_key)
+                    # Get obstacle ID or create new
+                    if pos_key in self.dynamic_obstacle_ids:
+                        obstacle_id = self.dynamic_obstacle_ids[pos_key]
+                        # Update obstacle position
+                        self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos_key)
+                    else:
+                        # Register new obstacle
+                        obstacle_id = f"obs_{self.next_obstacle_id}"
+                        self.next_obstacle_id += 1
+                        self.dynamic_obstacle_ids[pos_key] = obstacle_id
+                        self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos_key)
 
-                # Save obstacle type
-                self.classified_obstacles[pos_key] = ('dynamic', 0.9)
+                    # Save obstacle type
+                    self.classified_obstacles[pos_key] = ('dynamic', 0.9)
 
-        # Comment tạm thời để debug
+        # Comment tạm thời để debug classifier
         # obstacles = self.obstacle_classifier.detect_and_classify_from_image(current_image)
         # for pos, class_name, confidence in obstacles:
         #     # ... rest of classifier logic
@@ -515,22 +520,36 @@ class Robot:
             # Kiểm tra age của detection để tránh chờ obstacles cũ
             current_time = time.time()
             is_real_dynamic = False
+            obstacle = None
 
-            for obstacle in dynamic_obstacles.obstacles:
-                if obstacle['pos'] == target_pos:
+            # Check trong vùng của vật cản based on size
+            for obs in dynamic_obstacles.obstacles:
+                obstacle_size = obs.get('size', 1.0)
+                radius = int(obstacle_size / 2)
+                obstacle_center = obs['pos']
+
+                # Check if target_pos is within obstacle area
+                distance = math.sqrt((target_pos[0] - obstacle_center[0]) ** 2 +
+                                     (target_pos[1] - obstacle_center[1]) ** 2)
+                if distance <= radius + 0.5:  # Include safety margin
                     is_real_dynamic = True
+                    obstacle = obs
                     break
 
             # Chỉ wait nếu là real dynamic obstacle gần đây
             if is_real_dynamic:
+                # Thời gian chờ tỉ lệ với size của vật cản
+                obstacle_size = obstacle.get('size', 1.0) if obstacle else 1.0
+                wait_time = 1.5 + (obstacle_size - 1.0) * 0.5  # Longer wait for bigger obstacles
+
                 self.waiting = True
-                self.wait_time = 1.5  # Giảm từ 2.0 xuống 1.5
+                self.wait_time = wait_time
                 self.wait_start_time = time.time()
-                self.wait_reason = f"Obstacle at target ({target_pos})"
+                self.wait_reason = f"Large obstacle (size={obstacle_size:.1f}) at target ({target_pos})"
                 return True
             else:
                 # Clean up stale dynamic marking với bounds checking
-                if check_valid_pos(target_pos):
+                if check_valid_pos(target_pos) and self.map[target_pos] == 'd':
                     self.cleaned_dynamic_cells += 1
                     self.false_positive_count += 1
                     self.map[target_pos] = 0
@@ -545,6 +564,15 @@ class Robot:
 
         # Robot speed (in cells/second)
         robot_speed = 100.0
+
+        # Check if target position is already occupied by a dynamic obstacle
+        if self.map[target_pos] == 'd':
+            self.waiting = True
+            self.wait_time = 2.0  # Chờ 2 giây nếu vị trí đích đã bị chiếm
+            self.wait_start_time = time.time()
+            self.wait_reason = f"Obstacle at target ({target_pos})"
+            print(f"Target position {target_pos} occupied by dynamic obstacle. Waiting...")
+            return True
 
         # Check and apply waiting rule if needed
         need_wait, wait_info = self.dynamic_obstacle_handler.apply_waiting_rule(
@@ -625,12 +653,16 @@ def main():
 
     print('Time: ', execute_time)
 
-    # Debug output
+    # Debug information
     print(f'Debug: Total dynamic detections: {robot.debug_dynamic_count}')
     print(f'Debug: Unique positions detected: {len(robot.detected_positions)}')
     print(
         f'Debug: Detection ratio: {robot.debug_dynamic_count / len(robot.detected_positions) if robot.detected_positions else 0:.2f}')
+    print(f'Debug: Detection per frame: {robot.debug_dynamic_count / count_cell_go_through:.2f}')
+    print(
+        f'Debug: Avg detections per position: {robot.debug_dynamic_count / len(robot.detected_positions) if robot.detected_positions else 0:.2f}')
 
+    # Debug để hiểu discrepancy
     total_classified_dynamic = sum(1 for v in robot.classified_obstacles.values() if v[0] == 'dynamic')
     print(f'Debug: Classified as dynamic: {total_classified_dynamic}')
     print(
@@ -639,12 +671,6 @@ def main():
     # Clean up statistics
     actual_map_dynamic = np.sum(robot.map == 'd')
     print(f'Debug: Final dynamic cells in map: {actual_map_dynamic}')
-
-    # Safe access với fallback
-    total_moves = getattr(robot, 'total_moves', count_cell_go_through) or 1  # Prevent division by zero
-    print(f"Debug: Detection per frame: {robot.debug_dynamic_count / count_cell_go_through:.2f}")
-    print(
-        f"Debug: Avg detections per position: {robot.debug_dynamic_count / len(robot.detected_positions) if robot.detected_positions else 0:.2f}")
 
     # Summary metrics
     print("\n=== SUMMARY ===")
@@ -659,6 +685,9 @@ def main():
     print(
         f"False positive rate: {(robot.false_positive_count / robot.debug_dynamic_count * 100) if robot.debug_dynamic_count > 0 else 0:.1f}%")
     print(f"Cleaned dynamic cells: {robot.cleaned_dynamic_cells}")
+
+    # Safe access với fallback
+    total_moves = getattr(robot, 'total_moves', count_cell_go_through) or 1  # Prevent division by zero
     print(f"Average move time: {execute_time / total_moves:.3f}s per move")
 
     # Safe calculation
