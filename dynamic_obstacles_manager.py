@@ -52,7 +52,7 @@ class DynamicObstaclesManager:
                 )
 
             # Kích thước vật cản (đơn vị lưới) - có thể thay đổi ở đây
-            size = 1.0  # Tăng kích thước để dễ thấy hơn (có thể điều chỉnh)
+            size = 2.0  # Tăng kích thước để dễ thấy hơn (có thể điều chỉnh)
 
             # Màu sắc (đỏ đậm)
             color = (255, 0, 0)
