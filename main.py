@@ -16,7 +16,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/Swormville.txt', help='Path to map file')
 parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -34,7 +34,7 @@ ENVIRONMENT, battery_pos = ui.edit_map()
 ROW_COUNT = len(ENVIRONMENT)
 COL_COUNT = len(ENVIRONMENT[0])
 
-FPS = 80
+FPS = 40
 
 total_travel_length = 0
 coverage_length, retreat_length, advance_length = 0, 0, 0
