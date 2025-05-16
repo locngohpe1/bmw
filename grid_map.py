@@ -48,9 +48,9 @@ class Grid_Map:
 
         self.battery_pos = (0, 0)
         self.vehicle_pos = (0, 0)
+        self.dynamic_obstacles = []  # Initialize dynamic obstacles list
 
         self.battery_img = pg.Rect(BORDER, BORDER, EPSILON - BORDER, EPSILON - BORDER)
-        # self.vehicle_img = pg.Rect(BORDER, BORDER, EPSILON - BORDER, EPSILON - BORDER)
 
         self.trajectories = [[(0, 0)]] # list of trajectories (currently only coverage path)
 
@@ -84,8 +84,9 @@ class Grid_Map:
 
     def edit_map(self):
         done = False
-        draw_obstacle = False 
+        draw_obstacle = False
         prev_cell = None
+        self.dynamic_obstacles = []  # Store manually created dynamic obstacles
 
         while done == False:
             pos = pg.mouse.get_pos()
@@ -97,9 +98,23 @@ class Grid_Map:
                     done = True
                 elif event.type == pg.MOUSEBUTTONDOWN:
                     mouse_pressed = pg.mouse.get_pressed()
-                    if mouse_pressed[0]: # left mouse click: obstacle
-                        draw_obstacle = True
-                    if mouse_pressed[2]: # right mouse click: starting position
+                    keys = pg.key.get_pressed()
+
+                    if mouse_pressed[0]:  # left mouse click
+                        if keys[pg.K_LSHIFT] or keys[pg.K_RSHIFT]:  # Shift + left click: dynamic obstacle
+                            if self.check_valid_pos((row, col)) == False: continue
+                            if self.map[row][col] == 0 and (row, col) != self.battery_pos:
+                                # Create dynamic obstacle
+                                dynamic_obstacle = {
+                                    'pos': (row, col),
+                                    'id': f"manual_{len(self.dynamic_obstacles)}",
+                                    'size': 1.0
+                                }
+                                self.dynamic_obstacles.append(dynamic_obstacle)
+                                self.map[row][col] = 'd'
+                        else:  # normal left click: static obstacle
+                            draw_obstacle = True
+                    if mouse_pressed[2]:  # right mouse click: starting position
                         if self.check_valid_pos((row, col)) == False: continue
                         self.update_battery_pos((row, col))
                         self.trajectories[0] = [(row, col)]

@@ -14,66 +14,56 @@ class DynamicObstaclesManager:
         self.next_id = 1
         self.speed_factor = speed_factor
 
-        # Khởi tạo các vật cản động
-        self.initialize_obstacles()
+        # Không tự khởi tạo vật cản động nữa
+        # self.initialize_obstacles()
 
     def initialize_obstacles(self):
-        """Tạo các vật cản động ban đầu ở vị trí ngẫu nhiên"""
-        free_cells = []
+        """Khởi tạo vật cản động từ danh sách manual từ grid_map"""
+        # Lấy danh sách vật cản động từ grid_map nếu có
+        if hasattr(self.grid_map, 'dynamic_obstacles'):
+            for manual_obs in self.grid_map.dynamic_obstacles:
+                pos = manual_obs['pos']
 
-        # Tìm các ô trống
-        for row in range(len(self.grid_map.map)):
-            for col in range(len(self.grid_map.map[0])):
-                if self.grid_map.map[row, col] == 0:  # Ô trống
-                    # Không đặt vật cản gần vị trí sạc pin
-                    if math.dist((row, col), self.grid_map.battery_pos) > 5:
-                        free_cells.append((row, col))
-
-        # Tạo số lượng vật cản theo cấu hình
-        for _ in range(min(self.num_obstacles, len(free_cells) // 2)):  # Giới hạn số lượng vật cản nếu không đủ ô trống
-            if not free_cells:
-                break
-
-            # Chọn vị trí ngẫu nhiên
-            pos = random.choice(free_cells)
-            free_cells.remove(pos)
-
-            # Tạo vận tốc ngẫu nhiên nhưng lớn hơn để dễ thấy
-            velocity = (
-                random.uniform(-0.15, 0.15) * self.speed_factor,
-                random.uniform(-0.15, 0.15) * self.speed_factor
-            )
-
-            # Đảm bảo vận tốc không quá nhỏ
-            while abs(velocity[0]) < 0.05 and abs(velocity[1]) < 0.05:
-                velocity = (
-                    random.uniform(-0.15, 0.15) * self.speed_factor,
-                    random.uniform(-0.15, 0.15) * self.speed_factor
+                # Tạo vận tốc ngẫu nhiên
+                base_velocity = (
+                    random.uniform(-0.15, 0.15),
+                    random.uniform(-0.15, 0.15)
                 )
 
-            # Kích thước vật cản (đơn vị lưới) - có thể thay đổi ở đây
-            size = 1.0  # Tăng kích thước để dễ thấy hơn (có thể điều chỉnh)
+                # Đảm bảo vận tốc base không quá nhỏ
+                max_attempts = 10
+                attempt = 0
+                while (abs(base_velocity[0]) < 0.05 and abs(base_velocity[1]) < 0.05) and attempt < max_attempts:
+                    base_velocity = (
+                        random.uniform(-0.15, 0.15),
+                        random.uniform(-0.15, 0.15)
+                    )
+                    attempt += 1
 
-            # Màu sắc (đỏ đậm)
-            color = (255, 0, 0)
+                # Nếu vẫn quá nhỏ, set một giá trị mặc định
+                if abs(base_velocity[0]) < 0.05 and abs(base_velocity[1]) < 0.05:
+                    base_velocity = (0.1, 0.1)
 
-            # Thêm vật cản mới
-            obstacle = {
-                'id': f"dyn_{self.next_id}",
-                'pos': pos,
-                'velocity': velocity,
-                'size': size,
-                'color': color,
-                'exact_pos': (pos[0] + 0.5, pos[1] + 0.5)  # Vị trí chính xác (giữa ô)
-            }
+                # Áp dụng speed factor
+                velocity = (
+                    base_velocity[0] * max(self.speed_factor, 0.1),
+                    base_velocity[1] * max(self.speed_factor, 0.1)
+                )
 
-            self.obstacles.append(obstacle)
-            # Đánh dấu vị trí ban đầu với size
-            self._mark_obstacle_cells(pos, size)
+                obstacle = {
+                    'id': manual_obs['id'],
+                    'pos': pos,
+                    'velocity': velocity,
+                    'size': manual_obs.get('size', 1.0),
+                    'color': (255, 0, 0),
+                    'exact_pos': (pos[0] + 0.5, pos[1] + 0.5)
+                }
 
-            self.next_id += 1
+                self.obstacles.append(obstacle)
+                self._mark_obstacle_cells(pos, obstacle['size'])
+                self.next_id += 1
 
-        print(f"Created {len(self.obstacles)} dynamic obstacles")
+        print(f"Created {len(self.obstacles)} manual dynamic obstacles")
 
     def _clear_obstacle_cells(self, center_pos, size):
         """Xóa tất cả cells mà vật cản chiếm"""

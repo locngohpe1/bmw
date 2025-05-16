@@ -155,8 +155,9 @@ class Robot:
 
             ui.draw()
 
-            # Vẽ thêm vật cản động
-            dynamic_obstacles.draw(ui.WIN)
+            # Vẽ thêm vật cản động nếu có
+            if 'dynamic_obstacles' in globals():
+                dynamic_obstacles.draw(ui.WIN)
             pg.display.flip()
             # Show thêm thông so cho doi
             if self.waiting:
@@ -207,24 +208,26 @@ class Robot:
             self.detect_and_classify_obstacles()
 
             # Cập nhật thông tin vật cản động từ dynamic_obstacles_manager
-            for obstacle in dynamic_obstacles.obstacles:
-                pos = obstacle['pos']
-                obstacle_id = obstacle['id']
+            if 'dynamic_obstacles' in globals():
+                for obstacle in dynamic_obstacles.obstacles:
+                    pos = obstacle['pos']
+                    obstacle_id = obstacle['id']
 
-                # Update với size information
-                if obstacle_id not in self.dynamic_obstacle_handler.dynamic_obstacles:
-                    self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos, obstacle.get('velocity', (0, 0)))
-                    self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
-                else:
-                    self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos)
-                    self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
+                    # Update với size information
+                    if obstacle_id not in self.dynamic_obstacle_handler.dynamic_obstacles:
+                        self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos,
+                                                                        obstacle.get('velocity', (0, 0)))
+                        self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
+                    else:
+                        self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos)
+                        self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
 
-                # Đánh dấu vị trí là vật cản động trong bản đồ
-                if self.map[pos] not in ('o', 'e'):  # Không ghi đè lên vật cản tĩnh hoặc ô đã thăm
-                    self.map[pos] = 'd'
-                # Lưu thông tin phân loại
-                self.classified_obstacles[pos] = ('dynamic', 0.95)
-                self.dynamic_obstacle_ids[pos] = obstacle_id
+                    # Đánh dấu vị trí là vật cản động trong bản đồ
+                    if self.map[pos] not in ('o', 'e'):  # Không ghi đè lên vật cản tĩnh hoặc ô đã thăm
+                        self.map[pos] = 'd'
+                    # Lưu thông tin phân loại
+                    self.classified_obstacles[pos] = ('dynamic', 0.95)
+                    self.dynamic_obstacle_ids[pos] = obstacle_id
 
             # Remove old dynamic obstacles
             self.dynamic_obstacle_handler.remove_old_obstacles()
@@ -379,7 +382,8 @@ class Robot:
             # Kiểm tra vật cản động trước khi di chuyển
             while self.check_dynamic_collision(pos):
                 ui.draw()
-                dynamic_obstacles.draw(ui.WIN)
+                if 'dynamic_obstacles' in globals():
+                    dynamic_obstacles.draw(ui.WIN)
                 # Hiển thị thông tin chờ đợi
                 if self.waiting:
                     waiting_text = f"Waiting: {self.wait_reason} ({round(self.wait_time - (time.time() - self.wait_start_time), 1)}s)"
@@ -395,14 +399,16 @@ class Robot:
 
             self.move_to(pos)
             ui.draw()
-            dynamic_obstacles.draw(ui.WIN)
+            if 'dynamic_obstacles' in globals():
+                dynamic_obstacles.draw(ui.WIN)
 
             # Check for dynamic obstacles along the path
             if self.check_dynamic_collision(pos):
                 # Wait for obstacle to pass
                 while self.waiting:
                     ui.draw()
-                    dynamic_obstacles.draw(ui.WIN)
+                    if 'dynamic_obstacles' in globals():
+                        dynamic_obstacles.draw(ui.WIN)
                     current_time = time.time()
                     if current_time - self.wait_start_time >= self.wait_time:
                         self.waiting = False
@@ -609,25 +615,20 @@ def main():
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
 
-    # Khởi tạo trình quản lý vật cản động
+    # Khởi tạo trình quản lý vật cản động với manual obstacles từ ui
     global dynamic_obstacles
-    dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=5, speed_factor=2.0)
-    print("Map layout:")
-    for row in range(len(ENVIRONMENT)):
-        for col in range(len(ENVIRONMENT[0])):
-            if ENVIRONMENT[row, col] == 1:
-                print(f"Static obstacle at ({row}, {col})")
+    dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=0, speed_factor=args.speed)
 
-    print("\nDynamic obstacles:")
-    for obs in dynamic_obstacles.obstacles:
-        print(f"Dynamic obstacle at {obs['pos']} with velocity {obs['velocity']}")
+    # Khởi tạo các vật cản manual từ grid_map chỉ khi có
+    if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
+        dynamic_obstacles.initialize_obstacles()
     # Show information about obstacle classification
     print("Using obstacle classification with GoogLeNet")
     print(f"GPU available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU device: {torch.cuda.get_device_name(0)}")
 
-    print(f"Dynamic obstacles: {args.dynamic}")
+    print(f"Created {len(dynamic_obstacles.obstacles)} manual dynamic obstacles")
 
     global execute_time
     execute_time = time.time()
