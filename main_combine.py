@@ -20,7 +20,7 @@ from copy import deepcopy
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
 parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -217,6 +217,11 @@ class Robot:
             # Vẽ thêm vật cản động nếu có
             if 'dynamic_obstacles' in globals():
                 dynamic_obstacles.draw(ui.WIN)
+
+            # Draw vision sensor if Project B is active
+            if hasattr(self, 'using_project_b') and self.using_project_b:
+                self.draw_vision_sensor()
+
             pg.display.flip()
             # Show thêm thông so cho doi
             if self.waiting:
@@ -304,12 +309,12 @@ class Robot:
             # Remove old dynamic obstacles
                     # Remove old dynamic obstacles
                     self.dynamic_obstacle_handler.remove_old_obstacles()
-
                     # Use Project B logic if dynamic obstacles detected
                     flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
 
-                    if flag_b:
+                    if flag_b and self.seen_map is not None and self.prob_map is not None:
                         # Use Project B decision making
+                        self.using_project_b = True
                         self.logic_b.set_map(self.seen_map)
                         self.logic_b.set_prob_map(self.prob_map)
                         max_bid_value, replan_wp = self.logic_b.get_replan_wp(self.current_pos)
@@ -326,6 +331,7 @@ class Robot:
                                 wp = [designated_wp]
                     else:
                         # Use original Project A logic
+                        self.using_project_b = False
                         wp = self.logic.get_wp(self.current_pos)
 
                     if len(wp) == 0: continue
@@ -699,268 +705,285 @@ class Robot:
 
         return False
 
-        # ========== PROJECT B METHODS ==========
-        def update_dynamic_map_b(self, loop_count):
-            """Update dynamic map for Project B obstacles"""
-            row_count, col_count = len(self.static_map), len(self.static_map[0])
+    # ========== PROJECT B METHODS ==========
+    def update_dynamic_map_b(self, loop_count):
+        """Update dynamic map for Project B obstacles"""
+        # Check if maps are initialized
+        if self.static_map is None or self.dynamic_map is None:
+            return
 
-            # Clear previous dynamic obstacles
-            for x in range(row_count):
-                for y in range(col_count):
-                    if self.dynamic_map[x, y] == 3 or self.dynamic_map[x, y] == 4:
-                        self.dynamic_map[x, y] = self.static_map[x, y]
-                    if self.predict_map[x, y] == 3 or self.predict_map[x, y] == 4:
-                        self.predict_map[x, y] = self.static_map[x, y]
+        row_count, col_count = len(self.static_map), len(self.static_map[0])
 
-            # Move Project B dynamic obstacles
-            for obs in dynamic_obs_list:
-                if loop_count % obs.velocity == 0:
-                    obs.move_one_step(self.static_map)
+        # Clear previous dynamic obstacles
+        for x in range(row_count):
+            for y in range(col_count):
+                if self.dynamic_map[x, y] == 3 or self.dynamic_map[x, y] == 4:
+                    self.dynamic_map[x, y] = self.static_map[x, y]
+                if self.predict_map[x, y] == 3 or self.predict_map[x, y] == 4:
+                    self.predict_map[x, y] = self.static_map[x, y]
 
-                # Mark obstacle positions
-                for dx in range(obs.height):
-                    for dy in range(obs.width):
-                        x, y = obs.cur_row + dx, obs.cur_col + dy
-                        if self.current_pos == (x, y):
-                            print("Collision with Project B dynamic obstacle!")
-                            raise Exception('Collision with obstacle')
-                        self.dynamic_map[x, y] = 3
+        # Move Project B dynamic obstacles
+        for obs in dynamic_obs_list:
+            if loop_count % obs.velocity == 0:
+                obs.move_one_step(self.static_map)
 
-        def update_probability_map_and_seen_map_b(self):
-            """Update probability map and seen map for Project B"""
-            row_count, col_count = len(self.static_map), len(self.static_map[0])
+            # Mark obstacle positions
+            for dx in range(obs.height):
+                for dy in range(obs.width):
+                    x, y = obs.cur_row + dx, obs.cur_col + dy
+                    if self.current_pos == (x, y):
+                        print("Collision with Project B dynamic obstacle!")
+                        raise Exception('Collision with obstacle')
+                    self.dynamic_map[x, y] = 3
 
-            # Reset seen map
-            for x in range(row_count):
-                for y in range(col_count):
-                    self.seen_map[x, y] = self.static_map[x, y]
+    def update_probability_map_and_seen_map_b(self):
+        """Update probability map and seen map for Project B"""
+        # Check if maps are initialized
+        if self.static_map is None or self.prob_map is None or self.seen_map is None:
+            return
 
-            # Reset probability map
-            for x in range(row_count):
-                for y in range(col_count):
-                    if self.static_map[x, y] == 1:
-                        self.prob_map[x, y] = 0
-                    else:
-                        self.prob_map[x, y] = 0
+        row_count, col_count = len(self.static_map), len(self.static_map[0])
 
-            # Detect obstacles and update probability
-            detected_obs = self.obs_sensor_b(vision_range=VISION_SENSOR_RANGE)
-            obs_potential_next_move = []
-            obs_occupy_list = []
+        # Reset seen map
+        for x in range(row_count):
+            for y in range(col_count):
+                self.seen_map[x, y] = self.static_map[x, y]
 
-            for obs in detected_obs:
-                self.calculateProbabilityMap_b(obs)
-                for row in range(row_count):
-                    for col in range(col_count):
-                        if self.prob_map[row, col] != 0 and self.dynamic_map[row, col] != 1:
-                            obs_potential_next_move.append((row, col))
-                obs_potential_next_move += self.get_potential_positions_b(obs)
-                obs_occupy_list += obs.get_current_occupy_positions()
-
-            # Mark potential positions
-            for pos in obs_potential_next_move:
-                self.dynamic_map[pos] = 4
-
-            for pos in obs_occupy_list:
-                self.dynamic_map[pos] = 3
-                self.seen_map[pos] = 3
-                self.prob_map[pos] = 100
-
-        def obs_sensor_b(self, vision_range=VISION_SENSOR_RANGE):
-            """Project B obstacle sensor"""
-            obs_detected_list = []
-            in_sensor_list = []
-            border_cells = self.get_border_cells_b(self.current_pos)
-
-            for pos in border_cells:
-                obstruct_cell_list = self.obstruct_cell_list_b(self.current_pos, pos)
-                for cell in obstruct_cell_list:
-                    if self.dynamic_map[cell] == 1:
-                        break
-                    if cell not in in_sensor_list:
-                        in_sensor_list.append(cell)
-
-            for obs in dynamic_obs_list:
-                if set(obs.get_current_occupy_positions()) & set(in_sensor_list):
-                    obs_detected_list.append(obs)
-
-            self.obs_prev_detected_dict = self.obs_detected_dict.copy()
-            self.obs_detected_dict = {obs: obs.get_pos() for obs in obs_detected_list}
-
-            return obs_detected_list
-
-        def get_border_cells_b(self, cur_pos):
-            """Get border cells for vision sensor"""
-            left_border = right_border = up_border = down_border = -1
-            border_cells = []
-            cur_x, cur_y = cur_pos[0], cur_pos[1]
-
-            for x in range(cur_x - VISION_SENSOR_RANGE, cur_x + 1):
-                if x >= 0:
-                    up_border = x
-                    break
-
-            for x in range(cur_x, cur_x + VISION_SENSOR_RANGE + 1):
-                if x >= ROW_COUNT:
-                    break
+        # Reset probability map
+        for x in range(row_count):
+            for y in range(col_count):
+                if self.static_map[x, y] == 1:
+                    self.prob_map[x, y] = 0
                 else:
-                    down_border = x
+                    self.prob_map[x, y] = 0
 
-            for y in range(cur_y - VISION_SENSOR_RANGE, cur_y + 1):
-                if y >= 0:
-                    left_border = y
-                    break
+        # Detect obstacles and update probability
+        detected_obs = self.obs_sensor_b(vision_range=VISION_SENSOR_RANGE)
+        obs_potential_next_move = []
+        obs_occupy_list = []
 
-            for y in range(cur_y, cur_y + VISION_SENSOR_RANGE + 1):
-                if y >= COL_COUNT:
+        for obs in detected_obs:
+            self.calculateProbabilityMap_b(obs)
+            for row in range(row_count):
+                for col in range(col_count):
+                    if self.prob_map[row, col] != 0 and self.dynamic_map[row, col] != 1:
+                        obs_potential_next_move.append((row, col))
+            obs_potential_next_move += self.get_potential_positions_b(obs)
+            obs_occupy_list += obs.get_current_occupy_positions()
+
+        # Mark potential positions
+        for pos in obs_potential_next_move:
+            self.dynamic_map[pos] = 4
+
+        for pos in obs_occupy_list:
+            self.dynamic_map[pos] = 3
+            self.seen_map[pos] = 3
+            self.prob_map[pos] = 100
+
+    def obs_sensor_b(self, vision_range=VISION_SENSOR_RANGE):
+        """Project B obstacle sensor"""
+        obs_detected_list = []
+        in_sensor_list = []
+        border_cells = self.get_border_cells_b(self.current_pos)
+
+        for pos in border_cells:
+            obstruct_cell_list = self.obstruct_cell_list_b(self.current_pos, pos)
+            for cell in obstruct_cell_list:
+                if self.dynamic_map[cell] == 1:
                     break
+                if cell not in in_sensor_list:
+                    in_sensor_list.append(cell)
+
+        for obs in dynamic_obs_list:
+            if set(obs.get_current_occupy_positions()) & set(in_sensor_list):
+                obs_detected_list.append(obs)
+
+        self.obs_prev_detected_dict = self.obs_detected_dict.copy()
+        self.obs_detected_dict = {obs: obs.get_pos() for obs in obs_detected_list}
+
+        return obs_detected_list
+
+    def get_border_cells_b(self, cur_pos):
+        """Get border cells for vision sensor"""
+        left_border = right_border = up_border = down_border = -1
+        border_cells = []
+        cur_x, cur_y = cur_pos[0], cur_pos[1]
+
+        for x in range(cur_x - VISION_SENSOR_RANGE, cur_x + 1):
+            if x >= 0:
+                up_border = x
+                break
+
+        for x in range(cur_x, cur_x + VISION_SENSOR_RANGE + 1):
+            if x >= ROW_COUNT:
+                break
+            else:
+                down_border = x
+
+        for y in range(cur_y - VISION_SENSOR_RANGE, cur_y + 1):
+            if y >= 0:
+                left_border = y
+                break
+
+        for y in range(cur_y, cur_y + VISION_SENSOR_RANGE + 1):
+            if y >= COL_COUNT:
+                break
+            else:
+                right_border = y
+
+        for x in range(up_border, down_border + 1):
+            for y in range(left_border, right_border + 1):
+                if x == up_border or x == down_border:
+                    border_cells.append((x, y))
                 else:
-                    right_border = y
-
-            for x in range(up_border, down_border + 1):
-                for y in range(left_border, right_border + 1):
-                    if x == up_border or x == down_border:
+                    if y == left_border or y == right_border:
                         border_cells.append((x, y))
-                    else:
-                        if y == left_border or y == right_border:
-                            border_cells.append((x, y))
-            return border_cells
+        return border_cells
 
-        def obstruct_cell_list_b(self, pos_from, pos_to, strict=False):
-            """Calculate obstructed cells between two positions"""
+    def obstruct_cell_list_b(self, pos_from, pos_to, strict=False):
+        """Calculate obstructed cells between two positions"""
 
-            def sign(n):
-                return int(np.sign(n))
+        def sign(n):
+            return int(np.sign(n))
 
-            threshold = 0.3
-            start = (pos_from[0] + 0.5, pos_from[1] + 0.5)
-            goal = (pos_to[0] + 0.5, pos_to[1] + 0.5)
+        threshold = 0.3
+        start = (pos_from[0] + 0.5, pos_from[1] + 0.5)
+        goal = (pos_to[0] + 0.5, pos_to[1] + 0.5)
 
-            vecto = (goal[0] - start[0], goal[1] - start[1])
-            angle = - np.arctan2(vecto[0], vecto[1])
+        vecto = (goal[0] - start[0], goal[1] - start[1])
+        angle = - np.arctan2(vecto[0], vecto[1])
 
-            (x, y) = pos_from
-            cell_list = [pos_from]
+        (x, y) = pos_from
+        cell_list = [pos_from]
 
-            sx, sy = sign(vecto[0]), sign(vecto[1])
-            dx = abs(0.5 / math.sin(angle)) if vecto[0] != 0 else math.inf
-            dy = abs(0.5 / math.cos(angle)) if vecto[1] != 0 else math.inf
-            sum_x, sum_y = dx, dy
+        sx, sy = sign(vecto[0]), sign(vecto[1])
+        dx = abs(0.5 / math.sin(angle)) if vecto[0] != 0 else math.inf
+        dy = abs(0.5 / math.cos(angle)) if vecto[1] != 0 else math.inf
+        sum_x, sum_y = dx, dy
 
-            while (x, y) != pos_to:
-                (movx, movy) = (sum_x < sum_y or math.isclose(sum_x, sum_y),
-                                sum_y < sum_x or math.isclose(sum_x, sum_y))
+        while (x, y) != pos_to:
+            (movx, movy) = (sum_x < sum_y or math.isclose(sum_x, sum_y),
+                            sum_y < sum_x or math.isclose(sum_x, sum_y))
 
-                prev_x, prev_y = x, y
-                prev_sum_x, prev_sum_y = sum_x, sum_y
-                if movx:
-                    x += sx
-                    sum_x += 2 * dx
+            prev_x, prev_y = x, y
+            prev_sum_x, prev_sum_y = sum_x, sum_y
+            if movx:
+                x += sx
+                sum_x += 2 * dx
 
-                if movy:
-                    y += sy
-                    sum_y += 2 * dy
+            if movy:
+                y += sy
+                sum_y += 2 * dy
 
-                if strict:
-                    if movx and movy:
-                        cell_list.extend([(prev_x, prev_y + sy), (prev_x + sx, prev_y)])
-                    elif movx and not movy:
-                        projection_y = (abs(prev_sum_x * math.cos(angle)) - 0.5) % 1
-                        if projection_y < threshold:
-                            cell_list.append((x, prev_y - sy))
-                        elif projection_y > 1 - threshold:
-                            cell_list.append((prev_x, prev_y + sy))
-                    elif movy and not movx:
-                        projection_x = (abs(prev_sum_y * math.sin(angle)) - 0.5) % 1
-                        if projection_x < threshold:
-                            cell_list.append((prev_x - sx, y))
-                        elif projection_x > 1 - threshold:
-                            cell_list.append((prev_x + sx, prev_y))
+            if strict:
+                if movx and movy:
+                    cell_list.extend([(prev_x, prev_y + sy), (prev_x + sx, prev_y)])
+                elif movx and not movy:
+                    projection_y = (abs(prev_sum_x * math.cos(angle)) - 0.5) % 1
+                    if projection_y < threshold:
+                        cell_list.append((x, prev_y - sy))
+                    elif projection_y > 1 - threshold:
+                        cell_list.append((prev_x, prev_y + sy))
+                elif movy and not movx:
+                    projection_x = (abs(prev_sum_y * math.sin(angle)) - 0.5) % 1
+                    if projection_x < threshold:
+                        cell_list.append((prev_x - sx, y))
+                    elif projection_x > 1 - threshold:
+                        cell_list.append((prev_x + sx, prev_y))
 
-                cell_list.append((x, y))
+            cell_list.append((x, y))
 
-            return cell_list
+        return cell_list
 
-        def get_potential_positions_b(self, obs):
-            """Get potential positions for obstacle"""
-            neighbour = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
-            obs_occupy_list = obs.get_current_occupy_positions()
+    def get_potential_positions_b(self, obs):
+        """Get potential positions for obstacle"""
+        neighbour = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
+        obs_occupy_list = obs.get_current_occupy_positions()
 
-            prob_neighbour_list = []
-            visited = []
-            queue = deque()
-            queue.extend([(i, 0) for i in obs_occupy_list])
+        prob_neighbour_list = []
+        visited = []
+        queue = deque()
+        queue.extend([(i, 0) for i in obs_occupy_list])
 
-            while queue:
-                current_pos, step = queue.popleft()
-                for dx, dy in neighbour:
-                    x, y = current_pos[0] + dx, current_pos[1] + dy
-                    if not check_valid_pos((x, y)):
-                        continue
-                    if (x, y) in visited:
-                        continue
-                    if self.dynamic_map[x, y] == 1 or self.dynamic_map[x, y] == 3:
-                        continue
-                    if step > self.scan_freq * obs.velocity:
-                        continue
-                    queue.append(((x, y), step + 1))
-                    visited.append((x, y))
-                    if self.prob_map[x, y] > 0 and self.dynamic_map[x, y] != 1:
-                        prob_neighbour_list.append((x, y))
-            return prob_neighbour_list
-
-        def sample_b(self, z):
-            """Sampling function for Project B"""
-            rand = np.random.uniform(-z, z, 12)
-            return np.sum(rand) * 1 / 12
-
-        def sampling_b(self, obs):
-            """Sampling for obstacle prediction"""
-            (x, y) = obs.get_pos()
-            v_prime = obs.v + self.sample_b(self.alpha_1 * abs(obs.velocity) + self.alpha_2 * abs(obs.w))
-            w_prime = obs.w + self.sample_b(self.alpha_3 * abs(obs.velocity) + self.alpha_4 * abs(obs.w))
-            x_prime = x - v_prime / w_prime * math.sin(obs.theta) + v_prime / w_prime * math.sin(
-                obs.theta + self.scan_freq * w_prime)
-            y_prime = y + v_prime / w_prime * math.cos(obs.theta) - v_prime / w_prime * math.cos(
-                obs.theta + self.scan_freq * w_prime)
-            return (round(x_prime), round(y_prime))
-
-        def calculateProbabilityMap_b(self, obs):
-            """Calculate probability map for obstacle"""
-            new_pos_dict = dict()
-            for _ in range(NUMS_SAMPLE):
-                new_pos = self.sampling_b(obs)
-                if new_pos not in new_pos_dict.keys():
-                    new_pos_dict[new_pos] = 1
-                else:
-                    new_pos_dict[new_pos] += 1
-
-            for new_pos in new_pos_dict.keys():
-                prob = round(new_pos_dict[new_pos] / NUMS_SAMPLE * 100, 1)
-                if not check_valid_pos(new_pos):
+        while queue:
+            current_pos, step = queue.popleft()
+            for dx, dy in neighbour:
+                x, y = current_pos[0] + dx, current_pos[1] + dy
+                if not check_valid_pos((x, y)):
                     continue
-                if prob < self.prob_map[new_pos]:
+                if (x, y) in visited:
                     continue
-                self.prob_map[new_pos] = prob
+                if self.dynamic_map[x, y] == 1 or self.dynamic_map[x, y] == 3:
+                    continue
+                if step > self.scan_freq * obs.velocity:
+                    continue
+                queue.append(((x, y), step + 1))
+                visited.append((x, y))
+                if self.prob_map[x, y] > 0 and self.dynamic_map[x, y] != 1:
+                    prob_neighbour_list.append((x, y))
+        return prob_neighbour_list
 
-        def detect_dynamic_obs_b(self, vision_range=VISION_SENSOR_RANGE):
-            """Detect dynamic obstacles using Project B method"""
-            border_cells = self.get_border_cells_b(self.current_pos)
-            in_sensor_list = []
+    def sample_b(self, z):
+        """Sampling function for Project B"""
+        rand = np.random.uniform(-z, z, 12)
+        return np.sum(rand) * 1 / 12
 
-            for pos in border_cells:
-                obstruct_cell_list = self.obstruct_cell_list_b(self.current_pos, pos)
-                for cell in obstruct_cell_list:
-                    if self.dynamic_map[cell] == 1:
-                        break
-                    if cell not in in_sensor_list:
-                        in_sensor_list.append(cell)
+    def sampling_b(self, obs):
+        """Sampling for obstacle prediction"""
+        (x, y) = obs.get_pos()
+        v_prime = obs.v + self.sample_b(self.alpha_1 * abs(obs.velocity) + self.alpha_2 * abs(obs.w))
+        w_prime = obs.w + self.sample_b(self.alpha_3 * abs(obs.velocity) + self.alpha_4 * abs(obs.w))
+        x_prime = x - v_prime / w_prime * math.sin(obs.theta) + v_prime / w_prime * math.sin(
+            obs.theta + self.scan_freq * w_prime)
+        y_prime = y + v_prime / w_prime * math.cos(obs.theta) - v_prime / w_prime * math.cos(
+            obs.theta + self.scan_freq * w_prime)
+        return (round(x_prime), round(y_prime))
 
-            for cell in in_sensor_list:
-                if self.dynamic_map[cell] == 3:
-                    return True
+    def calculateProbabilityMap_b(self, obs):
+        """Calculate probability map for obstacle"""
+        new_pos_dict = dict()
+        for _ in range(NUMS_SAMPLE):
+            new_pos = self.sampling_b(obs)
+            if new_pos not in new_pos_dict.keys():
+                new_pos_dict[new_pos] = 1
+            else:
+                new_pos_dict[new_pos] += 1
+
+        for new_pos in new_pos_dict.keys():
+            prob = round(new_pos_dict[new_pos] / NUMS_SAMPLE * 100, 1)
+            if not check_valid_pos(new_pos):
+                continue
+            if prob < self.prob_map[new_pos]:
+                continue
+            self.prob_map[new_pos] = prob
+
+    def detect_dynamic_obs_b(self, vision_range=VISION_SENSOR_RANGE):
+        """Detect dynamic obstacles using Project B method"""
+        # Check if dynamic_map is initialized
+        if self.dynamic_map is None:
             return False
 
+        border_cells = self.get_border_cells_b(self.current_pos)
+        in_sensor_list = []
+
+        for pos in border_cells:
+            obstruct_cell_list = self.obstruct_cell_list_b(self.current_pos, pos)
+            for cell in obstruct_cell_list:
+                if self.dynamic_map[cell] == 1:
+                    break
+                if cell not in in_sensor_list:
+                    in_sensor_list.append(cell)
+
+        for cell in in_sensor_list:
+            if self.dynamic_map[cell] == 3:
+                return True
+        return False
+
+    def draw_vision_sensor(self):
+        """Draw vision sensor circle on screen"""
+        vehicle_center = ((self.current_pos[1] + 1 / 2) * EPSILON, (self.current_pos[0] + 1 / 2) * EPSILON)
+        sensor_radius = (VISION_SENSOR_RANGE + 1 / 2) * EPSILON
+        pg.draw.circle(ui.WIN, (204, 255, 255), vehicle_center, sensor_radius, width=4)
 
 def main():
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
