@@ -56,10 +56,9 @@ class DynamicObstacleHandler:
         for obstacle_id, data in self.dynamic_obstacles.items():
             age = current_time - data['last_seen']
             if age > max_age:
+                if hasattr(self, 'map') and hasattr(self.map, 'clear_dynamic'):
+                    self.map.clear_dynamic(data['position'])  # clear cell trên bản đồ nếu có
                 obstacles_to_remove.append(obstacle_id)
-                # Optional: Log removed obstacles
-                # print(f"Removed aged obstacle {obstacle_id}, age: {age:.1f}s")
-
         for obstacle_id in obstacles_to_remove:
             del self.dynamic_obstacles[obstacle_id]
 
@@ -118,7 +117,11 @@ class DynamicObstacleHandler:
         )
 
         # Ngưỡng khoảng cách an toàn - tính theo size của vật cản
-        obstacle_size = obstacle.get('size', 1.0)
+        raw_size = obstacle.get('size', 1.0)
+        if isinstance(raw_size, tuple):
+            obstacle_size = max(raw_size)
+        else:
+            obstacle_size = raw_size
         robot_size = 1.0  # Assume robot cũng có size
         safety_distance = (obstacle_size + robot_size) / 2 + 0.5  # Buffer thêm 0.5
 
@@ -171,15 +174,18 @@ class DynamicObstacleHandler:
 
             # Nếu vật cản đứng yên hoặc di chuyển quá chậm
             if obstacle_speed < 0.1:
-                wait_time = 0  # Không chờ, tìm đường khác
+                wait_time = 1.5  # Không chờ, tìm đường khác
                 return False, None
-
             # Thêm logic động để tính wait time
             base_wait = min_time_to_collision * 0.8  # 80% của thời gian collision
             safety_buffer = 0.3  # Buffer an toàn
 
             # Điều chỉnh theo size của vật cản
-            obstacle_size = self.dynamic_obstacles[colliding_obstacle].get('size', 1.0)
+            raw_size = self.dynamic_obstacles[colliding_obstacle].get('size', 1.0)
+            if isinstance(raw_size, tuple):
+                obstacle_size = max(raw_size)
+            else:
+                obstacle_size = raw_size
             size_factor = 1.0 + (obstacle_size - 1.0) * 0.3  # Bigger obstacles need more wait time
 
             wait_time = max(0.3, min(2.0, (base_wait + safety_buffer) * size_factor))

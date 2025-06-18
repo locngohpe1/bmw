@@ -22,7 +22,7 @@ param strict:
     False: only cells that obstruct the line
     True: cells that obstruct the line and cells that are near the line base on threashold
 '''
-def obstruct_cell_list(pos_from, pos_to, strict=False):
+def obstruct_cell_list(pos_from, pos_to, strict=True):
     threshold = 0.3 # threshold value: [0, 0.5]
     start = (pos_from[0] + 0.5, pos_from[1] + 0.5)
     goal = (pos_to[0] + 0.5, pos_to[1] + 0.5)

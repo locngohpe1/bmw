@@ -16,7 +16,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/Denmark.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
 parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -65,7 +65,7 @@ def check_valid_pos(pos):
 
 class Robot:
     def __init__(self, battery_pos, map_row_count, map_col_count):
-        self.logic = Logic(map_row_count, map_col_count)
+        self.logic = Logic(map_row_count, map_col_count, grid_map=ui)
         '''
         map:
             'u': unvisited
@@ -73,6 +73,7 @@ class Robot:
             'o': obstacle (static)
             'd': dynamic obstacle (new)
         '''
+        self.mode = "NORMAL"  # chế độ mặc định ban đầu
         self.map = None
         self.current_pos = battery_pos
 
@@ -177,6 +178,19 @@ class Robot:
                         FPS *= 2
                 if event.type == pg.QUIT:
                     run = False
+                elif event.type == pg.KEYDOWN:
+                    if event.key == pg.K_UP:
+                        for obs in dynamic_obstacles.obstacles:
+                            vx, vy = obs['velocity']
+                            obs['velocity'] = (vx * 2, vy * 2)
+                        print("↑ Tăng vận tốc vật cản động ×2")
+
+                    elif event.key == pg.K_DOWN:
+                        for obs in dynamic_obstacles.obstacles:
+                            vx, vy = obs['velocity']
+                            obs['velocity'] = (vx / 2, vy / 2)
+                        print("↓ Giảm vận tốc vật cản động ÷2")
+
 
             if pause:
                 continue
@@ -372,50 +386,62 @@ class Robot:
         self.follow_path_plan(advance_path, time_delay=0.05)
 
     def follow_path_plan(self, path, time_delay=0, check_energy=False, stop_on_unexpored=False):
-        clock = pg.time.Clock()
+        is_retreat = self.mode == "RETREAT"
+        wait_loops = 0
+        max_wait_loops = 50
+        clock = pg.time.Clock()  # giới hạn tốc độ vòng lặp nếu cần
+
         for pos in path:
-            clock.tick(FPS / 4)
+            for pos in path:
+                print(f"\n🔁 [RETREAT STEP] Next pos: {pos}, energy left: {self.energy:.2f}")
 
-            while check_energy == True and self.check_enough_energy(pos) == False:
-                self.charge_planning()
+                if self.map[pos] == 'd':
+                    print(f"⚠️  Cell {pos} is marked as dynamic obstacle in map")
 
-            # Kiểm tra vật cản động trước khi di chuyển
+                # Cập nhật vật cản động mỗi bước
+                delta_time = clock.get_time() / 1000.0
+                dynamic_obstacles.update(delta_time)
+
+            while check_energy and not self.check_enough_energy(pos):
+                if is_retreat:
+                    print(f"⚠️ Not enough energy during retreat at {pos} — skipping this step")
+                    return
+                else:
+                    self.charge_planning()
+            # Áp dụng waiting rule nếu có vật cản động
             while self.check_dynamic_collision(pos):
+                delta_time = clock.tick(FPS) / 1000.0  # cập nhật đúng mỗi frame
+                dynamic_obstacles.update(delta_time)
                 ui.draw()
-                if 'dynamic_obstacles' in globals():
-                    dynamic_obstacles.draw(ui.WIN)
-                # Hiển thị thông tin chờ đợi
+                dynamic_obstacles.draw(ui.WIN)
                 if self.waiting:
-                    waiting_text = f"Waiting: {self.wait_reason} ({round(self.wait_time - (time.time() - self.wait_start_time), 1)}s)"
-                    waiting_img = pg.font.SysFont(None, 24).render(waiting_text, True, (255, 0, 0))
-                    ui.WIN.blit(waiting_img, (10, 10))
+                    wait_remain = round(self.wait_time - (time.time() - self.wait_start_time), 1)
+                    wait_text = f"Waiting: {self.wait_reason} ({wait_remain}s)"
+                    wait_img = pg.font.SysFont(None, 24).render(wait_text, True, (255, 0, 0))
+                    ui.WIN.blit(wait_img, (10, 10))
+
                 pg.display.flip()
-                time.sleep(0.1)
+                pg.time.delay(100)
 
-                # Cập nhật vật cản động
-                current_time = time.time()
-                if self.waiting and current_time - self.wait_start_time >= self.wait_time:
+                if self.waiting and time.time() - self.wait_start_time >= self.wait_time:
                     self.waiting = False
+                    print("✅ Done waiting — will try to move again")
 
+                if is_retreat:
+                    wait_loops += 1
+                    if wait_loops > max_wait_loops:
+                        print("⛔ Retreat waiting timeout — skipping this cell")
+                        break
+
+            # Di chuyển bình thường
             self.move_to(pos)
+            wait_loops = 0  # Reset sau mỗi bước để tránh tích luỹ sai
             ui.draw()
             if 'dynamic_obstacles' in globals():
                 dynamic_obstacles.draw(ui.WIN)
 
-            # Check for dynamic obstacles along the path
-            if self.check_dynamic_collision(pos):
-                # Wait for obstacle to pass
-                while self.waiting:
-                    ui.draw()
-                    if 'dynamic_obstacles' in globals():
-                        dynamic_obstacles.draw(ui.WIN)
-                    current_time = time.time()
-                    if current_time - self.wait_start_time >= self.wait_time:
-                        self.waiting = False
-                    pg.time.delay(100)
-
-            if stop_on_unexpored:
-                if self.logic.weight_map[pos] > 0: return
+            if stop_on_unexpored and self.logic.weight_map[pos] > 0:
+                return
 
     def get_better_wp(self, wp):
         if len(wp) == 1: return wp
@@ -506,13 +532,6 @@ class Robot:
 
                     # Save obstacle type
                     self.classified_obstacles[pos_key] = ('dynamic', 0.9)
-
-        # Comment tạm thời để debug classifier
-        # obstacles = self.obstacle_classifier.detect_and_classify_from_image(current_image)
-        # for pos, class_name, confidence in obstacles:
-        #     # ... rest of classifier logic
-
-        # Save current image for next frame
         self.previous_camera_image = current_image
 
     def check_dynamic_collision(self, target_pos):
@@ -531,6 +550,8 @@ class Robot:
             # Check trong vùng của vật cản based on size
             for obs in dynamic_obstacles.obstacles:
                 obstacle_size = obs.get('size', 1.0)
+                if isinstance(obstacle_size, tuple):
+                    obstacle_size = max(obstacle_size)
                 radius = int(obstacle_size / 2)
                 obstacle_center = obs['pos']
 
@@ -546,7 +567,9 @@ class Robot:
             if is_real_dynamic:
                 # Thời gian chờ tỉ lệ với size của vật cản
                 obstacle_size = obstacle.get('size', 1.0) if obstacle else 1.0
-                wait_time = 1.5 + (obstacle_size - 1.0) * 0.5  # Longer wait for bigger obstacles
+                if isinstance(obstacle_size, tuple):
+                    obstacle_size = max(obstacle_size)
+                wait_time = 0.5 + (obstacle_size - 1.0) * 0.5
 
                 self.waiting = True
                 self.wait_time = wait_time
@@ -619,9 +642,21 @@ def main():
     global dynamic_obstacles
     dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=0, speed_factor=args.speed)
 
-    # Khởi tạo các vật cản manual từ grid_map chỉ khi có
+    # Khởi tạo các vật cản manual từ grid_map only if
     if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
         dynamic_obstacles.initialize_obstacles()
+        # ===== THÊM PRINT TỐC ĐỘ INFRONT CODE =====
+    print("\n=== INITIAL OBSTACLE SPEEDS ===")
+    if 'dynamic_obstacles' in globals() and dynamic_obstacles.obstacles:
+        for i, obstacle in enumerate(dynamic_obstacles.obstacles):
+            speed = math.sqrt(obstacle['velocity'][0] ** 2 + obstacle['velocity'][1] ** 2)
+            print(f"Obstacle {obstacle['id']}: Initial speed = {speed:.4f} units/frame")
+            print(f"  - Velocity: ({obstacle['velocity'][0]:.4f}, {obstacle['velocity'][1]:.4f})")
+            print(f"  - Position: {obstacle['pos']}")
+            print(f"  - Size: {obstacle.get('size_str', obstacle['size'])}")
+    else:
+        print("No dynamic obstacles found at initialization")
+    print("=" * 40)
     # Show information about obstacle classification
     print("Using obstacle classification with GoogLeNet")
     print(f"GPU available: {torch.cuda.is_available()}")
@@ -645,33 +680,7 @@ def main():
     print('Number Of Return: ', return_charge_count)
     print('Number of extreme deadlock:', extreme_deadlock_count, '/', deadlock_count)
     print('Number of dynamic obstacle waits:', dynamic_wait_count)
-
-    # Add statistics about dynamic obstacles
-    dynamic_count = sum(1 for val in robot.classified_obstacles.values() if val[0] == 'dynamic')
-    print(f'Dynamic obstacles detected: {dynamic_count}')
-    print(
-        f'Waiting events: {sum(1 for t in robot.dynamic_obstacle_handler.dynamic_obstacles.values() if len(t["history"]) > 2)}')
-
     print('Time: ', execute_time)
-
-    # Debug information
-    print(f'Debug: Total dynamic detections: {robot.debug_dynamic_count}')
-    print(f'Debug: Unique positions detected: {len(robot.detected_positions)}')
-    print(
-        f'Debug: Detection ratio: {robot.debug_dynamic_count / len(robot.detected_positions) if robot.detected_positions else 0:.2f}')
-    print(f'Debug: Detection per frame: {robot.debug_dynamic_count / count_cell_go_through:.2f}')
-    print(
-        f'Debug: Avg detections per position: {robot.debug_dynamic_count / len(robot.detected_positions) if robot.detected_positions else 0:.2f}')
-
-    # Debug để hiểu discrepancy
-    total_classified_dynamic = sum(1 for v in robot.classified_obstacles.values() if v[0] == 'dynamic')
-    print(f'Debug: Classified as dynamic: {total_classified_dynamic}')
-    print(
-        f'Debug: Dynamic vs classified ratio: {robot.debug_dynamic_count / total_classified_dynamic if total_classified_dynamic > 0 else 0:.2f}')
-
-    # Clean up statistics
-    actual_map_dynamic = np.sum(robot.map == 'd')
-    print(f'Debug: Final dynamic cells in map: {actual_map_dynamic}')
 
     # Summary metrics
     print("\n=== SUMMARY ===")
@@ -681,12 +690,6 @@ def main():
     print(
         f"Energy Efficiency: {return_charge_count} charges, avg distance per charge: {coverage_length / return_charge_count:.1f}")
 
-    # Performance analysis
-    print(f"\n=== PERFORMANCE ANALYSIS ===")
-    print(
-        f"False positive rate: {(robot.false_positive_count / robot.debug_dynamic_count * 100) if robot.debug_dynamic_count > 0 else 0:.1f}%")
-    print(f"Cleaned dynamic cells: {robot.cleaned_dynamic_cells}")
-
     # Safe access với fallback
     total_moves = getattr(robot, 'total_moves', count_cell_go_through) or 1  # Prevent division by zero
     print(f"Average move time: {execute_time / total_moves:.3f}s per move")
@@ -695,8 +698,33 @@ def main():
     expected_detections = total_moves * 0.07
     if expected_detections > 0:
         print(f"Detection efficiency: {robot.debug_dynamic_count / expected_detections:.2f} (target ~1.0)")
-    else:
-        print("Detection efficiency: N/A (no moves recorded)")
+        # ===== THÊM PRINT TỐC ĐỘ CUỐI CODE =====
+        print("\n=== FINAL OBSTACLE SPEEDS ===")
+        if 'dynamic_obstacles' in globals() and dynamic_obstacles.obstacles:
+            print("Final obstacle speeds and positions:")
+            for i, obstacle in enumerate(dynamic_obstacles.obstacles):
+                current_speed = math.sqrt(obstacle['velocity'][0] ** 2 + obstacle['velocity'][1] ** 2)
+                print(f"Obstacle {obstacle['id']}:")
+                print(f"  - Final speed: {current_speed:.4f} units/frame")
+                print(f"  - Final velocity: ({obstacle['velocity'][0]:.4f}, {obstacle['velocity'][1]:.4f})")
+                print(f"  - Final position: {obstacle['pos']}")
+                print(f"  - Size: {obstacle.get('size_str', obstacle['size'])}")
+                print(f"  - Final exact position: ({obstacle['exact_pos'][0]:.2f}, {obstacle['exact_pos'][1]:.2f})")
+
+                # Tính quãng đường đã di chuyển (nếu có lưu initial position)
+                if hasattr(obstacle, 'initial_pos'):
+                    distance_traveled = math.sqrt(
+                        (obstacle['exact_pos'][0] - obstacle['initial_pos'][0]) ** 2 +
+                        (obstacle['exact_pos'][1] - obstacle['initial_pos'][1]) ** 2
+                    )
+                    print(f"  - Distance traveled: {distance_traveled:.2f} units")
+
+            # Thống kê tổng quan
+            speeds = [math.sqrt(obs['velocity'][0] ** 2 + obs['velocity'][1] ** 2) for obs in
+                      dynamic_obstacles.obstacles]
+        else:
+            print("No dynamic obstacles found at completion")
+        print("=" * 40)
 
 
 if __name__ == "__main__":

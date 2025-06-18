@@ -86,7 +86,6 @@ class Grid_Map:
         done = False
         draw_obstacle = False
         prev_cell = None
-        self.dynamic_obstacles = []  # Store manually created dynamic obstacles
 
         while done == False:
             pos = pg.mouse.get_pos()
@@ -104,14 +103,35 @@ class Grid_Map:
                         if keys[pg.K_LSHIFT] or keys[pg.K_RSHIFT]:  # Shift + left click: dynamic obstacle
                             if self.check_valid_pos((row, col)) == False: continue
                             if self.map[row][col] == 0 and (row, col) != self.battery_pos:
-                                # Create dynamic obstacle
+                                # Tạo vật cản động hình người: 3 hàng × 2 cột (offset từ vị trí trung tâm)
+                                shape = [(0, 0), (0, 1), (1, 0), (1, 1), (-1, 0), (-1, 1)]
+                                min_r = min(dr for dr, _ in shape)
+                                max_r = max(dr for dr, _ in shape)
+                                min_c = min(dc for _, dc in shape)
+                                max_c = max(dc for _, dc in shape)
+
+                                height = max_r - min_r + 1
+                                width = max_c - min_c + 1
+
+                                obstacle_size = (height, width)
+                                obstacle_size_str = f"{height}x{width}"
+
                                 dynamic_obstacle = {
                                     'pos': (row, col),
                                     'id': f"manual_{len(self.dynamic_obstacles)}",
-                                    'size': 1.0
+                                    'size': obstacle_size,
+                                    'size_str': obstacle_size_str,
+                                    'shape': shape
                                 }
+
                                 self.dynamic_obstacles.append(dynamic_obstacle)
-                                self.map[row][col] = 'd'
+
+                                # Đánh dấu toàn bộ khối lên bản đồ
+                                for dr, dc in shape:
+                                    r, c = row + dr, col + dc
+                                    if 0 <= r < self.row_count and 0 <= c < self.col_count:
+                                        self.map[r][c] = 'd'
+
                         else:  # normal left click: static obstacle
                             draw_obstacle = True
                     if mouse_pressed[2]:  # right mouse click: starting position

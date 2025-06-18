@@ -2,8 +2,6 @@ from copy import deepcopy
 import math
 from queue import PriorityQueue
 
-from util.map_util import get_neighbor_pos, obstruct_cell_list
-
 # undirected graph
 class GridMapGraph:
     def __init__(self, map):
@@ -13,12 +11,13 @@ class GridMapGraph:
     
     def neighbors(self, node):
         neighbor_list = []
-        rotate = [(0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1)]
+        # rotate = [(0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1)]
+        rotate = [(-1, 0), (0, -1), (1, 0), (0, 1)]
         for i in range(len(rotate)):
             x, y = node[0] + rotate[i][0], node[1] + rotate[i][1]
             if x < 0 or x >= self.row_count: continue
             if y < 0 or y >= self.col_count: continue
-            if self.map[(x, y)] not in ('e', 'u', 0) or self.map[(x, y)] == 'd': continue
+            if self.map[(x, y)] not in (0, 2, 4): continue     # unvisited or visited or threat
 
             neighbor_list.append((x, y))
         
@@ -31,7 +30,7 @@ class GridMapGraph:
         return math.inf
 
 def heuristic(pos_from, pos_to):
-    #return abs(pos_from[0] - pos_to[0]) + abs(pos_from[1] - pos_to[1]) # manhattan distance
+    # return abs(pos_from[0] - pos_to[0]) + abs(pos_from[1] - pos_to[1]) # manhattan distance
     return math.dist(pos_from, pos_to) # euclidean distance
 
 def a_star_search(graph: GridMapGraph, start, goal):
@@ -56,9 +55,9 @@ def a_star_search(graph: GridMapGraph, start, goal):
 
     if cur_node != goal: raise Exception('A Star path not found')
 
-    path = [goal]
+    path = []
     while cur_node != start:
-        cur_node = came_from[cur_node]
         path.insert(0, cur_node)
+        cur_node = came_from[cur_node]
     
     return path, g[goal]

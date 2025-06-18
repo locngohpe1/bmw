@@ -22,7 +22,8 @@ def init_weight_map_mask(row, col):
     return weight_map
 
 class Logic:
-    def __init__(self, row_count, col_count, custom_field_b=None):
+    def __init__(self, row_count, col_count, grid_map=None, custom_field_b=None):
+        self.grid_map = grid_map
         self.state = Q.START
         # '''
         # map (vision update done in class Robot):
@@ -128,7 +129,7 @@ class Logic:
                 
                 if x < 0 or x >= len(weight_map): continue
                 if y < 0 or y >= len(weight_map[0]): continue
-                if weight_map[x, y] == -1: continue # obstacle
+                if weight_map[x, y] == -1 or self.grid_map.map[x][y] == 'd': continue  # obstacle hoặc vật cản động
 
                 new_dist = return_matrix[cur_node][1] + math.dist(cur_node, (x, y))
                 if new_dist < return_matrix[x, y][1]:
