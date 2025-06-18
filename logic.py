@@ -129,7 +129,7 @@ class Logic:
                 
                 if x < 0 or x >= len(weight_map): continue
                 if y < 0 or y >= len(weight_map[0]): continue
-                if weight_map[x, y] == -1 or self.grid_map.map[x][y] == 'd': continue  # obstacle hoặc vật cản động
+                if weight_map[x, y] == -1: continue  # static obstacle only
 
                 new_dist = return_matrix[cur_node][1] + math.dist(cur_node, (x, y))
                 if new_dist < return_matrix[x, y][1]:

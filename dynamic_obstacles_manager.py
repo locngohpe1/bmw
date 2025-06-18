@@ -159,23 +159,6 @@ class DynamicObstaclesManager:
             draw_x = int(x + (self.epsilon - icon_w) / 2)
             draw_y = int(y + (self.epsilon - icon_h) / 2)
             surface.blit(self.human_icon, (draw_x, draw_y))
-
-
-            # Debug vị trí vật cản và xác nhận icon người được vẽ
-            # print(f"Drawing obstacle at position: {x}, {y}")
-            # đoạn code sửa
-            # Vẽ icon người thay vì vẽ chấm đỏ
-            #surface.blit(self.human_icon, (int(x), int(y)))  # Vẽ biểu tượng người
-
-            ''''# Vẽ hình tròn đại diện cho vật cản động với viền đen
-            radius = int(obstacle['size'] * self.epsilon / 2)
-            center_x = int(x + self.epsilon / 2)
-            center_y = int(y + self.epsilon / 2)
-
-            # Vẽ obstacle với size thực tế
-            pg.draw.circle(surface, obstacle['color'], (center_x, center_y), radius)
-            pg.draw.circle(surface, (0, 0, 0), (center_x, center_y), radius, 2)  # Viền đen'''
-
             # Vẽ ID để debug (optional)
             # font = pg.font.Font(None, 16)
             # text = font.render(obstacle['id'], True, (255, 255, 255))

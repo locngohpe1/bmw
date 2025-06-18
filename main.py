@@ -108,13 +108,9 @@ class Robot:
         # Previous camera image for motion detection
         self.previous_camera_image = None
 
-        # Debug tracking
-        self.detected_positions = set()  # Track đã phát hiện
-        self.debug_dynamic_count = 0  # Debug counter
-        self.cleaned_dynamic_cells = 0
-        self.false_positive_count = 0
-        self.start_time = time.time()
+        # Essential tracking only
         self.total_moves = 0
+        self.detected_positions = set()  # Cần thiết cho detect_and_classify_obstacles
 
     def set_map(self, environment):
         row_count, col_count = len(environment), len(environment[0])
@@ -128,14 +124,6 @@ class Robot:
         self.logic.set_weight_map(environment)
 
     def run(self):
-        # Ensure all attributes exist (backward compatibility)
-        if not hasattr(self, 'cleaned_dynamic_cells'):
-            self.cleaned_dynamic_cells = 0
-        if not hasattr(self, 'false_positive_count'):
-            self.false_positive_count = 0
-        if not hasattr(self, 'total_moves'):
-            self.total_moves = 0
-
         global FPS, deadlock_count, extreme_deadlock_count, dynamic_wait_count
         clock = pg.time.Clock()
         run = True
@@ -515,7 +503,6 @@ class Robot:
                 if pos_key not in self.detected_positions and self.map[pos_key] != 'o':
                     self.detected_positions.add(pos_key)
                     self.map[pos_key] = 'd'
-                    self.debug_dynamic_count += 1
 
                     # Get obstacle ID or create new
                     if pos_key in self.dynamic_obstacle_ids:
@@ -541,8 +528,7 @@ class Robot:
 
         # Nếu vị trí đích là vật cản động được tạo thủ công, thì áp dụng waiting rule
         if self.map[target_pos] == 'd':
-            # Kiểm tra age của detection để tránh chờ obstacles cũ
-            current_time = time.time()
+            # Kiểm tra có phải là real dynamic obstacle không
             is_real_dynamic = False
             obstacle = None
 
@@ -562,7 +548,7 @@ class Robot:
                     obstacle = obs
                     break
 
-            # Chỉ wait nếu là real dynamic obstacle gần đây
+            # Chỉ wait nếu là real dynamic obstacle
             if is_real_dynamic:
                 # Thời gian chờ tỉ lệ với size của vật cản
                 obstacle_size = obstacle.get('size', 1.0) if obstacle else 1.0
@@ -576,10 +562,8 @@ class Robot:
                 self.wait_reason = f"Large obstacle (size={obstacle_size:.1f}) at target ({target_pos})"
                 return True
             else:
-                # Clean up stale dynamic marking với bounds checking
+                # Clean up stale dynamic marking
                 if check_valid_pos(target_pos) and self.map[target_pos] == 'd':
-                    self.cleaned_dynamic_cells += 1
-                    self.false_positive_count += 1
                     self.map[target_pos] = 0
                 return False
 
@@ -592,15 +576,6 @@ class Robot:
 
         # Robot speed (in cells/second)
         robot_speed = 100.0
-
-        # Check if target position is already occupied by a dynamic obstacle
-        if self.map[target_pos] == 'd':
-            self.waiting = True
-            self.wait_time = 2.0  # Chờ 2 giây nếu vị trí đích đã bị chiếm
-            self.wait_start_time = time.time()
-            self.wait_reason = f"Obstacle at target ({target_pos})"
-            print(f"Target position {target_pos} occupied by dynamic obstacle. Waiting...")
-            return True
 
         # Check and apply waiting rule if needed
         need_wait, wait_info = self.dynamic_obstacle_handler.apply_waiting_rule(
@@ -644,11 +619,7 @@ def main():
     # Khởi tạo các vật cản manual từ grid_map only if
     if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
         dynamic_obstacles.initialize_obstacles()
-        # ===== THÊM PRINT TỐC ĐỘ INFRONT CODE =====
-    # Simplified initialization info
-    if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
         print(f"Initialized {len(ui.dynamic_obstacles)} manual dynamic obstacles")
-    # Show information about obstacle classification
     print("Using BWave Framework with Dynamic Obstacles")
     print(f"GPU available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
@@ -677,7 +648,7 @@ def main():
     print("\n=== SUMMARY ===")
     print(f"Efficiency Score: {((1 - overlap_rate / 100) * 100):.1f}% (lower overlap = better)")
     print(f"Speed Improvement: {execute_time:.1f}s total")
-    print(f"Dynamic Handling: {dynamic_wait_count} waits, {robot.debug_dynamic_count} unique detections")
+    print(f"Dynamic Handling: {dynamic_wait_count} waits, {len(robot.detected_positions)} unique detections")
     print(
         f"Energy Efficiency: {return_charge_count} charges, avg distance per charge: {coverage_length / return_charge_count:.1f}")
 
@@ -685,9 +656,5 @@ def main():
     total_moves = getattr(robot, 'total_moves', count_cell_go_through) or 1  # Prevent division by zero
     print(f"Average move time: {execute_time / total_moves:.3f}s per move")
 
-    # Safe calculation
-    expected_detections = total_moves * 0.07
-    if expected_detections > 0:
-        print(f"Detection efficiency: {robot.debug_dynamic_count / expected_detections:.2f} (target ~1.0)")
 if __name__ == "__main__":
     main()
