@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from collections import deque
-from a_star_projectB import GridMapGraph, a_star_search
+from .a_star_projectB import GridMapGraph, a_star_search
 
 class Q: # State
     START, NORMAL, DEADLOCK, FINISH = range(4)
