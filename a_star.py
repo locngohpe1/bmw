@@ -18,7 +18,7 @@ class GridMapGraph:
             x, y = node[0] + rotate[i][0], node[1] + rotate[i][1]
             if x < 0 or x >= self.row_count: continue
             if y < 0 or y >= self.col_count: continue
-            if self.map[(x, y)] not in ('e', 'u', 0) or self.map[(x, y)] == 'd': continue
+            if self.map[(x, y)] not in ('e', 'u', 0): continue
 
             neighbor_list.append((x, y))
         

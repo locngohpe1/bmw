@@ -392,15 +392,14 @@ class Robot:
         clock = pg.time.Clock()  # giới hạn tốc độ vòng lặp nếu cần
 
         for pos in path:
-            for pos in path:
-                print(f"\n🔁 [RETREAT STEP] Next pos: {pos}, energy left: {self.energy:.2f}")
+            print(f"\n🔁 [RETREAT STEP] Next pos: {pos}, energy left: {self.energy:.2f}")
 
-                if self.map[pos] == 'd':
-                    print(f"⚠️  Cell {pos} is marked as dynamic obstacle in map")
+            if self.map[pos] == 'd':
+                print(f"⚠️  Cell {pos} is marked as dynamic obstacle in map")
 
-                # Cập nhật vật cản động mỗi bước
-                delta_time = clock.get_time() / 1000.0
-                dynamic_obstacles.update(delta_time)
+            # Cập nhật vật cản động mỗi bước
+            delta_time = clock.get_time() / 1000.0
+            dynamic_obstacles.update(delta_time)
 
             while check_energy and not self.check_enough_energy(pos):
                 if is_retreat:
@@ -646,19 +645,11 @@ def main():
     if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
         dynamic_obstacles.initialize_obstacles()
         # ===== THÊM PRINT TỐC ĐỘ INFRONT CODE =====
-    print("\n=== INITIAL OBSTACLE SPEEDS ===")
-    if 'dynamic_obstacles' in globals() and dynamic_obstacles.obstacles:
-        for i, obstacle in enumerate(dynamic_obstacles.obstacles):
-            speed = math.sqrt(obstacle['velocity'][0] ** 2 + obstacle['velocity'][1] ** 2)
-            print(f"Obstacle {obstacle['id']}: Initial speed = {speed:.4f} units/frame")
-            print(f"  - Velocity: ({obstacle['velocity'][0]:.4f}, {obstacle['velocity'][1]:.4f})")
-            print(f"  - Position: {obstacle['pos']}")
-            print(f"  - Size: {obstacle.get('size_str', obstacle['size'])}")
-    else:
-        print("No dynamic obstacles found at initialization")
-    print("=" * 40)
+    # Simplified initialization info
+    if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
+        print(f"Initialized {len(ui.dynamic_obstacles)} manual dynamic obstacles")
     # Show information about obstacle classification
-    print("Using obstacle classification with GoogLeNet")
+    print("Using BWave Framework with Dynamic Obstacles")
     print(f"GPU available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU device: {torch.cuda.get_device_name(0)}")
@@ -698,34 +689,5 @@ def main():
     expected_detections = total_moves * 0.07
     if expected_detections > 0:
         print(f"Detection efficiency: {robot.debug_dynamic_count / expected_detections:.2f} (target ~1.0)")
-        # ===== THÊM PRINT TỐC ĐỘ CUỐI CODE =====
-        print("\n=== FINAL OBSTACLE SPEEDS ===")
-        if 'dynamic_obstacles' in globals() and dynamic_obstacles.obstacles:
-            print("Final obstacle speeds and positions:")
-            for i, obstacle in enumerate(dynamic_obstacles.obstacles):
-                current_speed = math.sqrt(obstacle['velocity'][0] ** 2 + obstacle['velocity'][1] ** 2)
-                print(f"Obstacle {obstacle['id']}:")
-                print(f"  - Final speed: {current_speed:.4f} units/frame")
-                print(f"  - Final velocity: ({obstacle['velocity'][0]:.4f}, {obstacle['velocity'][1]:.4f})")
-                print(f"  - Final position: {obstacle['pos']}")
-                print(f"  - Size: {obstacle.get('size_str', obstacle['size'])}")
-                print(f"  - Final exact position: ({obstacle['exact_pos'][0]:.2f}, {obstacle['exact_pos'][1]:.2f})")
-
-                # Tính quãng đường đã di chuyển (nếu có lưu initial position)
-                if hasattr(obstacle, 'initial_pos'):
-                    distance_traveled = math.sqrt(
-                        (obstacle['exact_pos'][0] - obstacle['initial_pos'][0]) ** 2 +
-                        (obstacle['exact_pos'][1] - obstacle['initial_pos'][1]) ** 2
-                    )
-                    print(f"  - Distance traveled: {distance_traveled:.2f} units")
-
-            # Thống kê tổng quan
-            speeds = [math.sqrt(obs['velocity'][0] ** 2 + obs['velocity'][1] ** 2) for obs in
-                      dynamic_obstacles.obstacles]
-        else:
-            print("No dynamic obstacles found at completion")
-        print("=" * 40)
-
-
 if __name__ == "__main__":
     main()
