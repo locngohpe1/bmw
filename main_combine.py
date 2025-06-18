@@ -156,33 +156,29 @@ class Robot:
 
     def init_static_map_b(self, environment):
         """Initialize Project B maps"""
-        self.static_map = deepcopy(environment)
+        # Convert environment to numeric format for Project B
+        row_count, col_count = len(environment), len(environment[0])
+        numeric_env = np.zeros((row_count, col_count), dtype=int)
 
-        def init_static_map_b(self, environment):
-            """Initialize Project B maps"""
-            # Convert environment to numeric format for Project B
-            row_count, col_count = len(environment), len(environment[0])
-            numeric_env = np.zeros((row_count, col_count), dtype=int)
+        for x in range(row_count):
+            for y in range(col_count):
+                if environment[x, y] == 1 or environment[x, y] == 'o':
+                    numeric_env[x, y] = 1  # obstacle
+                elif environment[x, y] == 'e':
+                    numeric_env[x, y] = 2  # visited
+                elif environment[x, y] == 'd':
+                    numeric_env[x, y] = 3  # dynamic obstacle
+                else:
+                    numeric_env[x, y] = 0  # free space
 
-            for x in range(row_count):
-                for y in range(col_count):
-                    if environment[x, y] == 1 or environment[x, y] == 'o':
-                        numeric_env[x, y] = 1  # obstacle
-                    elif environment[x, y] == 'e':
-                        numeric_env[x, y] = 2  # visited
-                    elif environment[x, y] == 'd':
-                        numeric_env[x, y] = 3  # dynamic obstacle
-                    else:
-                        numeric_env[x, y] = 0  # free space
-
-            self.static_map = deepcopy(numeric_env)
-            self.dynamic_map = deepcopy(numeric_env)
-            self.predict_map = deepcopy(numeric_env)
-            self.prob_map = np.zeros((row_count, col_count), dtype=float)
-            self.seen_map = deepcopy(numeric_env)
-            self.predict_map[self.battery_pos] = self.dynamic_map[self.battery_pos] = 2
-            self.seen_map[self.battery_pos] = 2
-            self.logic_b.init_weight_map(numeric_env)
+        self.static_map = deepcopy(numeric_env)
+        self.dynamic_map = deepcopy(numeric_env)
+        self.predict_map = deepcopy(numeric_env)
+        self.prob_map = np.zeros((row_count, col_count), dtype=float)
+        self.seen_map = deepcopy(numeric_env)
+        self.predict_map[self.battery_pos] = self.dynamic_map[self.battery_pos] = 2
+        self.seen_map[self.battery_pos] = 2
+        self.logic_b.init_weight_map(numeric_env)
 
     def run(self):
         global FPS, deadlock_count, extreme_deadlock_count, dynamic_wait_count
@@ -306,9 +302,9 @@ class Robot:
                     self.classified_obstacles[pos] = ('dynamic', 0.95)
                     self.dynamic_obstacle_ids[pos] = obstacle_id
 
-            # Remove old dynamic obstacles
                     # Remove old dynamic obstacles
                     self.dynamic_obstacle_handler.remove_old_obstacles()
+
                     # Use Project B logic if dynamic obstacles detected
                     flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
 
@@ -981,8 +977,8 @@ class Robot:
 
     def draw_vision_sensor(self):
         """Draw vision sensor circle on screen"""
-        vehicle_center = ((self.current_pos[1] + 1 / 2) * EPSILON, (self.current_pos[0] + 1 / 2) * EPSILON)
-        sensor_radius = (VISION_SENSOR_RANGE + 1 / 2) * EPSILON
+        vehicle_center = (int((self.current_pos[1] + 1 / 2) * EPSILON), int((self.current_pos[0] + 1 / 2) * EPSILON))
+        sensor_radius = int((VISION_SENSOR_RANGE + 1 / 2) * EPSILON)
         pg.draw.circle(ui.WIN, (204, 255, 255), vehicle_center, sensor_radius, width=4)
 
 def main():
