@@ -19,9 +19,18 @@ class LogicAlgorithm:
         row_count, col_count = len(environment), len(environment[0])
         for x, row in enumerate(environment):
             for y, val in enumerate(row):
-                # if val == 0: self.weight_map[x, y] = col_count - y  # free cell
-                # elif val == 1: self.weight_map[x, y] = -1           # obstacle cell
-                self.weight_map[x, y] = environment[x, y]
+                # Convert to numeric value if needed
+                if isinstance(val, str):
+                    if val in ('o', '1'):
+                        self.weight_map[x, y] = 1  # obstacle
+                    elif val == 'e':
+                        self.weight_map[x, y] = 2  # visited
+                    elif val == 'd':
+                        self.weight_map[x, y] = 3  # dynamic obstacle
+                    else:
+                        self.weight_map[x, y] = 0  # free space
+                else:
+                    self.weight_map[x, y] = int(val)
     
     def set_map(self, map):
         self.weight_map = map

@@ -157,13 +157,32 @@ class Robot:
     def init_static_map_b(self, environment):
         """Initialize Project B maps"""
         self.static_map = deepcopy(environment)
-        self.dynamic_map = deepcopy(environment)
-        self.predict_map = deepcopy(environment)
-        self.prob_map = deepcopy(environment)
-        self.seen_map = deepcopy(environment)
-        self.predict_map[self.battery_pos] = self.dynamic_map[self.battery_pos] = 2
-        self.seen_map[self.battery_pos] = 2
-        self.logic_b.init_weight_map(environment)
+
+        def init_static_map_b(self, environment):
+            """Initialize Project B maps"""
+            # Convert environment to numeric format for Project B
+            row_count, col_count = len(environment), len(environment[0])
+            numeric_env = np.zeros((row_count, col_count), dtype=int)
+
+            for x in range(row_count):
+                for y in range(col_count):
+                    if environment[x, y] == 1 or environment[x, y] == 'o':
+                        numeric_env[x, y] = 1  # obstacle
+                    elif environment[x, y] == 'e':
+                        numeric_env[x, y] = 2  # visited
+                    elif environment[x, y] == 'd':
+                        numeric_env[x, y] = 3  # dynamic obstacle
+                    else:
+                        numeric_env[x, y] = 0  # free space
+
+            self.static_map = deepcopy(numeric_env)
+            self.dynamic_map = deepcopy(numeric_env)
+            self.predict_map = deepcopy(numeric_env)
+            self.prob_map = np.zeros((row_count, col_count), dtype=float)
+            self.seen_map = deepcopy(numeric_env)
+            self.predict_map[self.battery_pos] = self.dynamic_map[self.battery_pos] = 2
+            self.seen_map[self.battery_pos] = 2
+            self.logic_b.init_weight_map(numeric_env)
 
     def run(self):
         global FPS, deadlock_count, extreme_deadlock_count, dynamic_wait_count
