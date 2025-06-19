@@ -6,8 +6,6 @@ import csv
 import torch
 import argparse
 
-from a_star import GridMapGraph, a_star_search
-from logic import Logic, Q
 from project_B.logic_projectB import LogicAlgorithm, Q as Q_B
 from grid_map import Grid_Map, EPSILON
 from obstacle_classifier import ObstacleClassifier
@@ -78,8 +76,9 @@ def check_valid_pos(pos):
 
 class Robot:
     def __init__(self, battery_pos, map_row_count, map_col_count):
-        self.logic = Logic(map_row_count, map_col_count, grid_map=ui)
-        self.logic_b = LogicAlgorithm(map_row_count, map_col_count)
+        # Only use Project B logic
+        self.logic = LogicAlgorithm(map_row_count, map_col_count)
+        # Remove: self.logic_b = LogicAlgorithm(map_row_count, map_col_count)
         '''
         map:
             'u': unvisited
@@ -102,30 +101,9 @@ class Robot:
         self.move_status = 0  # 0: normal coverage, 1: retreat, 2: charge, 3: advance
         self.cache_path = []  # store temporary path (e.g.: retreat, advance)
 
-        # New components for dynamic obstacle handling
-        self.use_gpu = torch.cuda.is_available()
-        self.obstacle_classifier = ObstacleClassifier(use_gpu=self.use_gpu)
-        self.dynamic_obstacle_handler = DynamicObstacleHandler()
-        self.virtual_camera = VirtualCamera(ui, EPSILON)
-
-        # Obstacle tracking state
-        self.classified_obstacles = {}  # {pos: ('static'/'dynamic', confidence)}
-        self.dynamic_obstacle_ids = {}  # {pos: id}
-        self.next_obstacle_id = 1
-
-        # Waiting state for dynamic obstacles
-        self.waiting = False
-        self.wait_time = 0
-        self.wait_start_time = 0
-        self.wait_reason = ""  # Lý do chờ đợi để hiển thị
-
-        # Previous camera image for motion detection
-        self.previous_camera_image = None
-
-        # Essential tracking only
-        # Essential tracking only
+        # Remove all Project A obstacle handling components
+        # Keep only essential tracking
         self.total_moves = 0
-        self.detected_positions = set()  # Cần thiết cho detect_and_classify_obstacles
 
         # Project B components
         self.static_map = None
@@ -143,16 +121,9 @@ class Robot:
         self.obs_detected_dict = dict()
 
     def set_map(self, environment):
-        row_count, col_count = len(environment), len(environment[0])
-        self.map = np.full((row_count, col_count), 'u')
-
-        for x in range(len(environment)):
-            for y in range(len(environment[0])):
-                if environment[x, y] == 1:
-                    self.map[x, y] = 'o'
-
-        self.logic.set_weight_map(environment)
+        # Only use Project B numeric format
         self.init_static_map_b(environment)
+        self.logic.init_weight_map(self.static_map)
 
     def init_static_map_b(self, environment):
         """Initialize Project B maps"""
@@ -213,11 +184,8 @@ class Robot:
             # Vẽ thêm vật cản động nếu có
             if 'dynamic_obstacles' in globals():
                 dynamic_obstacles.draw(ui.WIN)
-
-            # Draw vision sensor if Project B is active
-            if hasattr(self, 'using_project_b') and self.using_project_b:
-                self.draw_vision_sensor()
-
+            # Always draw vision sensor (Project B only)
+            self.draw_vision_sensor()
             pg.display.flip()
             # Show thêm thông so cho doi
             if self.waiting:
@@ -263,7 +231,7 @@ class Robot:
                     # Still waiting
                     continue
 
-            if self.logic.state == Q.FINISH:
+            if self.logic.state == Q_B.FINISH:
                 if not coverage_finish:
                     coverage_finish = True
                     self.retreat()
@@ -277,8 +245,8 @@ class Robot:
                 # FN (do nothing until close window)
                 continue
 
-            # Detect and classify obstacles
-            self.detect_and_classify_obstacles()
+            # Remove Project A obstacle detection
+            # Keep only Project B obstacle management
 
             # Cập nhật thông tin vật cản động từ dynamic_obstacles_manager
             if 'dynamic_obstacles' in globals():
@@ -302,32 +270,26 @@ class Robot:
                     self.classified_obstacles[pos] = ('dynamic', 0.95)
                     self.dynamic_obstacle_ids[pos] = obstacle_id
 
-                    # Remove old dynamic obstacles
-                    self.dynamic_obstacle_handler.remove_old_obstacles()
-
-                    # Use Project B logic if dynamic obstacles detected
+                    # Always use Project B P-Decision Framework
                     flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
 
-                    if flag_b and self.seen_map is not None and self.prob_map is not None:
-                        # Use Project B decision making
-                        self.using_project_b = True
-                        self.logic_b.set_map(self.seen_map)
-                        self.logic_b.set_prob_map(self.prob_map)
-                        max_bid_value, replan_wp = self.logic_b.get_replan_wp(self.current_pos)
+                    if flag_b:
+                        self.logic.set_map(self.seen_map)
+                        self.logic.set_prob_map(self.prob_map)
+                        max_bid_value, replan_wp = self.logic.get_replan_wp(self.current_pos)
                         wp = [replan_wp] if replan_wp else []
 
-                        # Check if should use original waypoint
-                        designated_wp = self.logic.get_wp(self.current_pos)
+                        # Go-or-wait decision from Project B
+                        designated_wp = self.logic.boustrophedon_moving(self.current_pos)
                         if wp != designated_wp and self.prob_map[self.current_pos] < MIN_PROB_THRESHOLD and len(
                                 designated_wp) > 0:
                             designated_wp = designated_wp[0]
                             if self.prob_map[designated_wp] > 0:
-                                continue
+                                continue  # Wait
                             else:
                                 wp = [designated_wp]
                     else:
-                        # Use original Project A logic
-                        self.using_project_b = False
+                        # Use Project B boustrophedon motion
                         wp = self.logic.get_wp(self.current_pos)
 
                     if len(wp) == 0: continue
@@ -336,29 +298,24 @@ class Robot:
             if selected_cell == self.current_pos:
                 self.task()
             else:
-                # CP 0
-                if self.logic.state == Q.NORMAL:
-                    # Check for potential collision with dynamic obstacles
-                    if self.check_dynamic_collision(selected_cell):
-                        # Collision detected, waiting implemented
-                        dynamic_wait_count += 1
-                        continue
-
+                # Use Project B logic states
+                if self.logic.state == Q_B.NORMAL:
                     if self.check_enough_energy(selected_cell) == False:
                         self.charge_planning()
                         continue
                     self.move_to(selected_cell)
 
-                # CP l (l > 0)
-                elif self.logic.state == Q.DEADLOCK:
-                    path, dist = self.logic.cache_path, self.logic.cache_dist
-                    print(f"Deadlock ({round(dist, 2)})")
-
-                    deadlock_count += 1
-                    if dist > math.sqrt(ROW_COUNT ** 2 + COL_COUNT ** 2) / 4:
-                        extreme_deadlock_count += 1
-
-                    self.follow_path_plan(path, time_delay=0.05, check_energy=True, stop_on_unexpored=True)
+                elif self.logic.state == Q_B.DEADLOCK:
+                    path = self.logic.escape_deadlock_path(self.current_pos)
+                    if len(path) == 0:
+                        self.logic.state = Q_B.FINISH
+                        continue
+                    else:
+                        if flag_b:
+                            _, deadlock_wp = self.logic.escape_deadlock_dynamic(self.current_pos, path[-1])
+                            self.move_to(deadlock_wp)
+                        else:
+                            self.move_to(path[0])
 
     def select_from_wp(self, wp):
         new_wp = self.get_better_wp(wp)
@@ -556,150 +513,6 @@ class Robot:
 
                 for x, y in child_region.cell_list:
                     self.logic.weight_map[x, y] = floor_weight + (child_region.max_y - y)
-
-    def detect_and_classify_obstacles(self):
-        """Detect and classify obstacles using the virtual camera"""
-        # Skip detection một số frames để giảm false positive
-        if not hasattr(self, '_detection_skip_counter'):
-            self._detection_skip_counter = 0
-        self._detection_skip_counter += 1
-        if self._detection_skip_counter % 3 != 0:
-            return
-
-        # Get direction from robot angle
-        direction = (math.cos(self.angle), math.sin(self.angle))
-
-        # Capture image from virtual camera
-        current_image = self.virtual_camera.capture_image(self.current_pos, direction)
-
-        # Detect moving obstacles
-        if self.previous_camera_image is not None:
-            dynamic_obstacles_detected = self.virtual_camera.detect_dynamic_obstacles(
-                current_image, self.previous_camera_image
-            )
-
-            # Update dynamic obstacle information
-            for (rel_row, rel_col), (width, height) in dynamic_obstacles_detected:
-                # Bỏ qua detections quá gần robot (có thể là noise)
-                distance_from_robot = math.sqrt(rel_row ** 2 + rel_col ** 2)
-                if distance_from_robot < 2:  # Ignore detections trong bán kính 2 cells
-                    continue
-
-                # Convert relative position to absolute
-                abs_row = self.current_pos[0] + rel_row
-                abs_col = self.current_pos[1] + rel_col
-
-                # Check if position is valid
-                if not check_valid_pos((abs_row, abs_col)):
-                    continue
-
-                # Tránh duplicate counting
-                pos_key = (abs_row, abs_col)
-                if pos_key not in self.detected_positions and self.map[pos_key] != 'o':
-                    self.detected_positions.add(pos_key)
-                    self.map[pos_key] = 'd'
-
-                    # Get obstacle ID or create new
-                    if pos_key in self.dynamic_obstacle_ids:
-                        obstacle_id = self.dynamic_obstacle_ids[pos_key]
-                        # Update obstacle position
-                        self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos_key)
-                    else:
-                        # Register new obstacle
-                        obstacle_id = f"obs_{self.next_obstacle_id}"
-                        self.next_obstacle_id += 1
-                        self.dynamic_obstacle_ids[pos_key] = obstacle_id
-                        self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos_key)
-
-                    # Save obstacle type
-                    self.classified_obstacles[pos_key] = ('dynamic', 0.9)
-        self.previous_camera_image = current_image
-
-    def check_dynamic_collision(self, target_pos):
-        """Check for collision with dynamic obstacles when moving to target_pos"""
-        # Kiểm tra nếu vị trí đích là vật cản tĩnh thì KHÔNG áp dụng waiting rule
-        if self.map[target_pos] in (1, 'o'):
-            return False  # Vật cản tĩnh - không chờ
-
-        # Nếu vị trí đích là vật cản động được tạo thủ công, thì áp dụng waiting rule
-        if self.map[target_pos] == 'd':
-            # Kiểm tra có phải là real dynamic obstacle không
-            is_real_dynamic = False
-            obstacle = None
-
-            # Check trong vùng của vật cản based on size
-            for obs in dynamic_obstacles.obstacles:
-                obstacle_size = obs.get('size', 1.0)
-                if isinstance(obstacle_size, tuple):
-                    obstacle_size = max(obstacle_size)
-                radius = int(obstacle_size / 2)
-                obstacle_center = obs['pos']
-
-                # Check if target_pos is within obstacle area
-                distance = math.sqrt((target_pos[0] - obstacle_center[0]) ** 2 +
-                                     (target_pos[1] - obstacle_center[1]) ** 2)
-                if distance <= radius + 0.5:  # Include safety margin
-                    is_real_dynamic = True
-                    obstacle = obs
-                    break
-
-            # Chỉ wait nếu là real dynamic obstacle
-            if is_real_dynamic:
-                # Thời gian chờ tỉ lệ với size của vật cản
-                obstacle_size = obstacle.get('size', 1.0) if obstacle else 1.0
-                if isinstance(obstacle_size, tuple):
-                    obstacle_size = max(obstacle_size)
-                wait_time = 0.5 + (obstacle_size - 1.0) * 0.5
-
-                self.waiting = True
-                self.wait_time = wait_time
-                self.wait_start_time = time.time()
-                self.wait_reason = f"Large obstacle (size={obstacle_size:.1f}) at target ({target_pos})"
-                return True
-            else:
-                # Clean up stale dynamic marking
-                if check_valid_pos(target_pos) and self.map[target_pos] == 'd':
-                    self.map[target_pos] = 0
-                return False
-
-        # Calculate movement direction
-        direction = (target_pos[0] - self.current_pos[0], target_pos[1] - self.current_pos[1])
-        distance = math.sqrt(direction[0] ** 2 + direction[1] ** 2)
-
-        if distance < 1e-6:  # If distance is almost zero
-            return False
-
-        # Robot speed (in cells/second)
-        robot_speed = 100.0
-
-        # Check and apply waiting rule if needed
-        need_wait, wait_info = self.dynamic_obstacle_handler.apply_waiting_rule(
-            self.current_pos, direction, robot_speed
-        )
-
-        if need_wait:
-            stop_position, wait_time = wait_info
-            self.wait_reason = "Collision predicted"
-            print(f"Dynamic obstacle detected! Waiting for {wait_time:.2f} seconds")
-
-            # Only move to stop position if different from current position
-            if stop_position != self.current_pos:
-                # Use move_to to go to the stop position
-                # We don't use the original move_to to avoid triggering coverage
-                dist = math.dist(self.current_pos, stop_position)
-                self.energy -= 0.5 * dist  # Half energy for tactical movement
-                self.rotate_to(stop_position)
-                self.current_pos = stop_position
-                ui.update_vehicle_pos(stop_position)
-                ui.set_energy_display(self.energy)
-
-            # Start waiting
-            self.waiting = True
-            self.wait_time = wait_time
-            self.wait_start_time = time.time()
-            return True
-
-        return False
 
     # ========== PROJECT B METHODS ==========
     def update_dynamic_map_b(self, loop_count):
