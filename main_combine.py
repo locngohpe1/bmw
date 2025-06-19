@@ -269,7 +269,8 @@ class Robot:
                 selected_cell = None
 
                 # CRITICAL FIX: Call task() BEFORE getting waypoint (like Project B)
-                self.task()
+                if self.logic.state != Q_B.DEADLOCK:
+                    self.task()
 
                 # MOVE LOGIC OUTSIDE LOOP - Always use Project B P-Decision Framework
                 flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
@@ -295,16 +296,24 @@ class Robot:
 
                 if len(wp) == 0:
                     print(f"DEBUG: No waypoint found at {self.current_pos}, state={self.logic.state}")
-                    continue
-                selected_cell = self.select_from_wp(wp)
+                    if self.logic.state == Q_B.DEADLOCK:
+                        # Handle deadlock directly without select_from_wp
+                        selected_cell = None  # Will trigger deadlock handling below
+                    else:
+                        continue
+                else:
+                    selected_cell = self.select_from_wp(wp)
                 print(f"DEBUG: Current pos: {self.current_pos}, WP candidates: {wp}, Selected: {selected_cell}")
                 print(
                     f"DEBUG: Logic state: {self.logic.state}, Weight map at current: {self.logic.weight_map[self.current_pos]}")
 
-            if selected_cell is None:
+            # Handle different cases
+            if selected_cell is None and self.logic.state == Q_B.DEADLOCK:
+                # Go directly to deadlock handling
+                pass  # Fall through to deadlock handling
+            elif selected_cell is None:
                 continue
-
-            if selected_cell != self.current_pos:
+            elif selected_cell == self.current_pos:
                 # Use Project B logic states
                 if self.logic.state == Q_B.NORMAL:
                     # Check energy constraint before moving
@@ -315,17 +324,24 @@ class Robot:
                     self.move_to(selected_cell)
 
                 elif self.logic.state == Q_B.DEADLOCK:
+                    print(f"DEBUG DEADLOCK: Starting deadlock escape from {self.current_pos}")
                     path = self.logic.escape_deadlock_path(self.current_pos)
+                    print(f"DEBUG DEADLOCK: Found path: {path}")
+
                     if len(path) == 0:
+                        print("DEBUG DEADLOCK: No escape path found - FINISH")
                         self.logic.state = Q_B.FINISH
                         continue
                     else:
-                        # Check if dynamic obstacles detected again
+                        # Check if dynamic obstacles detected
                         current_flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
                         if current_flag_b:
+                            print("DEBUG DEADLOCK: Using dynamic escape")
                             _, deadlock_wp = self.logic.escape_deadlock_dynamic(self.current_pos, path[-1])
+                            print(f"DEBUG DEADLOCK: Dynamic escape waypoint: {deadlock_wp}")
                             self.move_to(deadlock_wp)
                         else:
+                            print(f"DEBUG DEADLOCK: Using static escape to {path[0]}")
                             self.move_to(path[0])
 
     def select_from_wp(self, wp):

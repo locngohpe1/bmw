@@ -141,19 +141,14 @@ class LogicAlgorithm:
         # not deadlock
         self.state = Q.NORMAL
         wp = self.boustrophedon_moving(current_pos)
-        
-        if len(wp) > 0: return wp
 
-        # deadlock
+        if len(wp) > 0:
+            return wp
+
+        # deadlock - FIX: Actually set state and return for deadlock handling
+        print(f"DEBUG LOGIC: Setting DEADLOCK state at {current_pos}")
         self.state = Q.DEADLOCK
-        return wp
-    
-        wp = self.get_deadlock_wp(current_pos)
-
-        if len(wp) == 0: 
-            self.state = Q.FINISH
-
-        return wp
+        return []  # Return empty to trigger deadlock handling in main loop
     
     # def boustrophedon_moving(self, current_pos):
     #     row_count, col_count = len(self.weight_map), len(self.weight_map[0])
