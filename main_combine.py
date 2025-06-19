@@ -325,9 +325,19 @@ class Robot:
                         print("DEBUG DEADLOCK: Using dynamic escape")
                         _, deadlock_wp = self.logic.escape_deadlock_dynamic(self.current_pos, path[-1])
                         print(f"DEBUG DEADLOCK: Dynamic escape waypoint: {deadlock_wp}")
+                        # CRITICAL: Check energy before deadlock move
+                        if not self.check_enough_energy(deadlock_wp):
+                            print(f"DEBUG DEADLOCK: Not enough energy for dynamic escape - charging")
+                            self.charge_planning()
+                            continue
                         self.move_to(deadlock_wp)
                     else:
                         print(f"DEBUG DEADLOCK: Using static escape to {path[0]}")
+                        # CRITICAL: Check energy before deadlock move
+                        if not self.check_enough_energy(path[0]):
+                            print(f"DEBUG DEADLOCK: Not enough energy for static escape - charging")
+                            self.charge_planning()
+                            continue
                         self.move_to(path[0])
                 continue
             elif selected_cell is None:
