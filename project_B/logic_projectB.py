@@ -193,6 +193,7 @@ class LogicAlgorithm:
             print(f"DEBUG BOUSTRO: Moving RIGHT to ({x},{y + 1}) - second chance")
             return [(x, y + 1)]
         print(f"DEBUG BOUSTRO: NO MOVES AVAILABLE - DEADLOCK")
+        self.state = Q.DEADLOCK
         return []
     
     def escape_deadlock_path(self, current_pos):

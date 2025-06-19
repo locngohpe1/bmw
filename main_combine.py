@@ -309,12 +309,31 @@ class Robot:
 
             # Handle different cases
             if selected_cell is None and self.logic.state == Q_B.DEADLOCK:
-                # Go directly to deadlock handling
-                pass  # Fall through to deadlock handling
+                # Handle deadlock directly
+                print(f"DEBUG DEADLOCK: Starting deadlock escape from {self.current_pos}")
+                path = self.logic.escape_deadlock_path(self.current_pos)
+                print(f"DEBUG DEADLOCK: Found path: {path}")
+
+                if len(path) == 0:
+                    print("DEBUG DEADLOCK: No escape path found - FINISH")
+                    self.logic.state = Q_B.FINISH
+                    continue
+                else:
+                    # Check if dynamic obstacles detected
+                    current_flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
+                    if current_flag_b:
+                        print("DEBUG DEADLOCK: Using dynamic escape")
+                        _, deadlock_wp = self.logic.escape_deadlock_dynamic(self.current_pos, path[-1])
+                        print(f"DEBUG DEADLOCK: Dynamic escape waypoint: {deadlock_wp}")
+                        self.move_to(deadlock_wp)
+                    else:
+                        print(f"DEBUG DEADLOCK: Using static escape to {path[0]}")
+                        self.move_to(path[0])
+                continue
             elif selected_cell is None:
                 continue
-            elif selected_cell == self.current_pos:
-                # Use Project B logic states
+            else:
+                # Move to selected cell
                 if self.logic.state == Q_B.NORMAL:
                     # Check energy constraint before moving
                     if not self.check_enough_energy(selected_cell):
@@ -486,6 +505,14 @@ class Robot:
             delta_time = clock.get_time() / 1000.0
             dynamic_obstacles.update(delta_time)
 
+            # CRITICAL: Always check energy before moving during retreat
+            move_energy = math.dist(self.current_pos, pos) * 0.5  # retreat uses half energy
+            if self.energy < move_energy:
+                print(f"⚠️ EMERGENCY: Not enough energy for retreat step {self.current_pos} -> {pos}")
+                print(f"⚠️ Current energy: {self.energy:.2f}, Need: {move_energy:.2f}")
+                print(f"⚠️ Stopping retreat - robot stuck at {self.current_pos}")
+                return
+
             while check_energy and not self.check_enough_energy(pos):
                 if is_retreat:
                     print(f"⚠️ Not enough energy during retreat at {pos} — skipping this step")
@@ -588,6 +615,22 @@ class Robot:
                         print("Collision with Project B dynamic obstacle!")
                         raise Exception('Collision with obstacle')
                     self.dynamic_map[x, y] = 3
+
+        # CRITICAL: Also mark manual dynamic obstacles from Project A
+        if 'dynamic_obstacles' in globals():
+            for obstacle in dynamic_obstacles.obstacles:
+                obs_pos = obstacle['pos']
+                obs_size = obstacle.get('size', (1, 1))
+
+                # Mark all cells occupied by manual obstacle
+                if isinstance(obs_size, tuple):
+                    height, width = obs_size
+                    for dr in range(height):
+                        for dc in range(width):
+                            x, y = obs_pos[0] + dr, obs_pos[1] + dc
+                            if 0 <= x < row_count and 0 <= y < col_count:
+                                self.dynamic_map[x, y] = 3
+                                self.seen_map[x, y] = 3
 
     def update_probability_map_and_seen_map_b(self):
         """Update probability map and seen map for Project B"""
@@ -827,8 +870,12 @@ class Robot:
                 if cell not in in_sensor_list:
                     in_sensor_list.append(cell)
 
+        # Check both Project B dynamic obstacles and manual obstacles
         for cell in in_sensor_list:
             if self.dynamic_map[cell] == 3:
+                return True
+            # Also check manual dynamic obstacles from Project A
+            if hasattr(ui, 'map') and ui.map[cell] == 'd':
                 return True
         return False
 
