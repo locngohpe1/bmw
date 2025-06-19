@@ -168,24 +168,36 @@ class LogicAlgorithm:
     #     if y - 1 > 0 and self.weight_map[x][y-1] == 0:
     #         return [(x, y - 1)]
     #     return []
-    
+
     def boustrophedon_moving(self, current_pos):
         row_count, col_count = len(self.weight_map), len(self.weight_map[0])
         (x, y) = current_pos
 
+        print(f"DEBUG BOUSTRO: pos=({x},{y}), direction={self.direction}")
+        print(
+            f"DEBUG BOUSTRO: down={self.weight_map[x + 1][y] if x + 1 < row_count else 'OOB'}, up={self.weight_map[x - 1][y] if x - 1 >= 0 else 'OOB'}")
+        print(
+            f"DEBUG BOUSTRO: right={self.weight_map[x][y + 1] if y + 1 < col_count else 'OOB'}, left={self.weight_map[x][y - 1] if y - 1 >= 0 else 'OOB'}")
+
         if (x + 1) < row_count and self.weight_map[x + 1][y] == 0:
+            print(f"DEBUG BOUSTRO: Moving DOWN to ({x + 1},{y})")
             return [(x + 1, y)]
         if (x - 1) >= 0 and self.weight_map[x - 1][y] == 0:
+            print(f"DEBUG BOUSTRO: Moving UP to ({x - 1},{y})")
             return [(x - 1, y)]
-        if y + 1 < col_count and self.weight_map[x][y+1] == 0:
+        if y + 1 < col_count and self.weight_map[x][y + 1] == 0:
             if self.direction == 3:
+                print(f"DEBUG BOUSTRO: Moving RIGHT to ({x},{y + 1})")
                 return [(x, y + 1)]
         self.direction = 4
-        if y - 1 > 0 and self.weight_map[x][y-1] == 0:
+        if y - 1 > 0 and self.weight_map[x][y - 1] == 0:
+            print(f"DEBUG BOUSTRO: Moving LEFT to ({x},{y - 1})")
             return [(x, y - 1)]
         self.direction = 3
-        if y + 1 < col_count and self.weight_map[x][y+1] == 0:
+        if y + 1 < col_count and self.weight_map[x][y + 1] == 0:
+            print(f"DEBUG BOUSTRO: Moving RIGHT to ({x},{y + 1}) - second chance")
             return [(x, y + 1)]
+        print(f"DEBUG BOUSTRO: NO MOVES AVAILABLE - DEADLOCK")
         return []
     
     def escape_deadlock_path(self, current_pos):
