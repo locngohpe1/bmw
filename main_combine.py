@@ -262,44 +262,49 @@ class Robot:
             if 'dynamic_obstacles' in globals():
                 for obstacle in dynamic_obstacles.obstacles:
                     pos = obstacle['pos']
-                    obstacle_id = obstacle['id']
-
                     # Mark as dynamic obstacle in Project B format
                     if self.dynamic_map[pos] not in (1, 2):  # not obstacle or visited
                         self.dynamic_map[pos] = 3  # dynamic obstacle
+                # Initialize selected_cell
+                selected_cell = None
 
-                    # Always use Project B P-Decision Framework
-                    flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
-
-                    if flag_b:
-                        self.logic.set_map(self.seen_map)
-                        self.logic.set_prob_map(self.prob_map)
-                        max_bid_value, replan_wp = self.logic.get_replan_wp(self.current_pos)
-                        wp = [replan_wp] if replan_wp else []
-
-                        # Go-or-wait decision from Project B
-                        designated_wp = self.logic.boustrophedon_moving(self.current_pos)
-                        if wp != designated_wp and self.prob_map[self.current_pos] < MIN_PROB_THRESHOLD and len(
-                                designated_wp) > 0:
-                            designated_wp = designated_wp[0]
-                            if self.prob_map[designated_wp] > 0:
-                                continue  # Wait
-                            else:
-                                wp = [designated_wp]
-                    else:
-                        # Use Project B boustrophedon motion
-                        wp = self.logic.get_wp(self.current_pos)
-
-                    if len(wp) == 0:
-                        print(f"DEBUG: No waypoint found at {self.current_pos}, state={self.logic.state}")
-                        continue
-                    selected_cell = self.select_from_wp(wp)
-                    print(f"DEBUG: Current pos: {self.current_pos}, WP candidates: {wp}, Selected: {selected_cell}")
-                    print(f"DEBUG: Logic state: {self.logic.state}, Weight map at current: {self.logic.weight_map[self.current_pos]}")
-
-            if selected_cell == self.current_pos:
+                # CRITICAL FIX: Call task() BEFORE getting waypoint (like Project B)
                 self.task()
-            else:
+
+                # MOVE LOGIC OUTSIDE LOOP - Always use Project B P-Decision Framework
+                flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
+
+                if flag_b:
+                    self.logic.set_map(self.seen_map)
+                    self.logic.set_prob_map(self.prob_map)
+                    max_bid_value, replan_wp = self.logic.get_replan_wp(self.current_pos)
+                    wp = [replan_wp] if replan_wp else []
+
+                    # Go-or-wait decision from Project B
+                    designated_wp = self.logic.boustrophedon_moving(self.current_pos)
+                    if wp != designated_wp and self.prob_map[self.current_pos] < MIN_PROB_THRESHOLD and len(
+                            designated_wp) > 0:
+                        designated_wp = designated_wp[0]
+                        if self.prob_map[designated_wp] > 0:
+                            continue  # Wait
+                        else:
+                            wp = [designated_wp]
+                else:
+                    # Use Project B boustrophedon motion
+                    wp = self.logic.get_wp(self.current_pos)
+
+                if len(wp) == 0:
+                    print(f"DEBUG: No waypoint found at {self.current_pos}, state={self.logic.state}")
+                    continue
+                selected_cell = self.select_from_wp(wp)
+                print(f"DEBUG: Current pos: {self.current_pos}, WP candidates: {wp}, Selected: {selected_cell}")
+                print(
+                    f"DEBUG: Logic state: {self.logic.state}, Weight map at current: {self.logic.weight_map[self.current_pos]}")
+
+            if selected_cell is None:
+                continue
+
+            if selected_cell != self.current_pos:
                 # Use Project B logic states
                 if self.logic.state == Q_B.NORMAL:
                     # Check energy constraint before moving
@@ -380,9 +385,9 @@ class Robot:
 
         ui.set_energy_display(self.energy)
 
-        # Auto-mark cell as visited after moving in coverage mode
-        if self.move_status == 0:  # coverage mode
-            self.task()
+        # Remove duplicate task() call - task() already called in main logic
+        # if self.move_status == 0:  # coverage mode
+        #     self.task()
 
     def travel_cost(self, pos_to):
         pos_from = self.current_pos
