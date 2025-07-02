@@ -309,7 +309,16 @@ class Robot:
 
             # Handle different cases
             if selected_cell is None and self.logic.state == Q_B.DEADLOCK:
-                # Handle deadlock directly
+                # CRITICAL: Check energy FIRST before any deadlock escape
+                print(f"DEBUG DEADLOCK: Energy check before escape - Current: {self.energy:.2f}")
+
+                # If low energy, prioritize charging over deadlock escape
+                if self.energy < 50:  # Energy threshold for safe operations
+                    print(f"DEBUG DEADLOCK: Low energy detected - forcing charge planning")
+                    self.charge_planning()
+                    continue
+
+                # Handle deadlock with energy awareness
                 print(f"DEBUG DEADLOCK: Starting deadlock escape from {self.current_pos}")
                 path = self.logic.escape_deadlock_path(self.current_pos)
                 print(f"DEBUG DEADLOCK: Found path: {path}")
@@ -319,26 +328,9 @@ class Robot:
                     self.logic.state = Q_B.FINISH
                     continue
                 else:
-                    # Check if dynamic obstacles detected
-                    current_flag_b = self.detect_dynamic_obs_b(VISION_SENSOR_RANGE)
-                    if current_flag_b:
-                        print("DEBUG DEADLOCK: Using dynamic escape")
-                        _, deadlock_wp = self.logic.escape_deadlock_dynamic(self.current_pos, path[-1])
-                        print(f"DEBUG DEADLOCK: Dynamic escape waypoint: {deadlock_wp}")
-                        # CRITICAL: Check energy before deadlock move
-                        if not self.check_enough_energy(deadlock_wp):
-                            print(f"DEBUG DEADLOCK: Not enough energy for dynamic escape - charging")
-                            self.charge_planning()
-                            continue
-                        self.move_to(deadlock_wp)
-                    else:
-                        print(f"DEBUG DEADLOCK: Using static escape to {path[0]}")
-                        # CRITICAL: Check energy before deadlock move
-                        if not self.check_enough_energy(path[0]):
-                            print(f"DEBUG DEADLOCK: Not enough energy for static escape - charging")
-                            self.charge_planning()
-                            continue
-                        self.move_to(path[0])
+                    # Follow entire deadlock path with energy checking
+                    print(f"DEBUG DEADLOCK: Following deadlock path with energy constraints")
+                    self.follow_path_plan(path, time_delay=0.05, check_energy=True, stop_on_unexpored=True)
                 continue
             elif selected_cell is None:
                 continue
