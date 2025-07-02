@@ -217,8 +217,7 @@ class Robot:
 
                     # Update với size information
                     if obstacle_id not in self.dynamic_obstacle_handler.dynamic_obstacles:
-                        self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos,
-                                                                        obstacle.get('velocity', (0, 0)))
+                        self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos, obstacle.get('velocity', (0, 0)))
                         self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
                     else:
                         self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos)
