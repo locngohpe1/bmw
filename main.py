@@ -4,10 +4,8 @@ import pygame as pg
 import time
 import csv
 import torch
-import torch
 import threading
 import contextlib
-import numpy as np
 import argparse
 
 from a_star import GridMapGraph, a_star_search
@@ -151,33 +149,13 @@ class Robot:
                 # Cập nhật vật cản động với snapshot
                 dynamic_obstacles.update(delta_time)
 
-                # ✅ Decision making dựa trên consistent snapshot
-                wp = self.logic.get_wp(self.current_pos)
-                if len(wp) == 0: continue
-                selected_cell = self.select_from_wp(wp)
-
-        def _get_obstacle_snapshot(self):
-            """Get atomic snapshot of current obstacle state"""
-            snapshot = {
-                'positions': {},
-                'velocities': {},
-                'sizes': {}
-            }
-
-            if hasattr(self, 'dynamic_obstacles') and dynamic_obstacles.obstacles:
-                for obs in dynamic_obstacles.obstacles:
-                    obs_id = obs['id']
-                    snapshot['positions'][obs_id] = obs['pos']
-                    snapshot['velocities'][obs_id] = obs.get('velocity', (0, 0))
-                    snapshot['sizes'][obs_id] = obs.get('size', 1.0)
-
-            return snapshot
             ui.draw()
 
             # Vẽ thêm vật cản động nếu có
             if 'dynamic_obstacles' in globals():
                 dynamic_obstacles.draw(ui.WIN)
             pg.display.flip()
+
             # Show thêm thông so cho doi
             if self.waiting:
                 waiting_text = f"Waiting: {self.wait_reason} ({round(self.wait_time - (current_time - self.wait_start_time), 1)}s)"
@@ -208,7 +186,6 @@ class Robot:
                             vx, vy = obs['velocity']
                             obs['velocity'] = (vx / 2, vy / 2)
                         print("↓ Giảm vận tốc vật cản động ÷2")
-
 
             if pause:
                 continue
@@ -247,7 +224,8 @@ class Robot:
 
                     # Update với size information
                     if obstacle_id not in self.dynamic_obstacle_handler.dynamic_obstacles:
-                        self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos, obstacle.get('velocity', (0, 0)))
+                        self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos,
+                                                                        obstacle.get('velocity', (0, 0)))
                         self.dynamic_obstacle_handler.dynamic_obstacles[obstacle_id]['size'] = obstacle.get('size', 1.0)
                     else:
                         self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos)
@@ -264,17 +242,26 @@ class Robot:
             self.dynamic_obstacle_handler.remove_old_obstacles()
 
             wp = self.logic.get_wp(self.current_pos)
-            if len(wp) == 0: continue
+            if len(wp) == 0:
+                continue
             selected_cell = self.select_from_wp(wp)
-            # ✅ ENERGY CHECK TRƯỚC - Logic đúng
-            if self.check_enough_energy(selected_cell) == False:
-                self.charge_planning()
-                continue
-            # ✅ SAU ĐÓ MỚI CHECK COLLISION
-            if self.check_dynamic_collision(selected_cell):
-                dynamic_wait_count += 1
-                continue
-            self.move_to(selected_cell)
+
+            if selected_cell == self.current_pos:
+                self.task()
+            else:
+                # CP 0
+                if self.logic.state == Q.NORMAL:
+                    # ✅ ENERGY CHECK TRƯỚC - Logic đúng
+                    if self.check_enough_energy(selected_cell) == False:
+                        self.charge_planning()
+                        continue
+                    # ✅ SAU ĐÓ MỚI CHECK COLLISION
+                    if self.check_dynamic_collision(selected_cell):
+                        dynamic_wait_count += 1
+                        continue
+                    self.move_to(selected_cell)
+
+                # CP l (l > 0)
                 elif self.logic.state == Q.DEADLOCK:
                     path, dist = self.logic.cache_path, self.logic.cache_dist
                     print(f"Deadlock ({round(dist, 2)})")
@@ -284,6 +271,23 @@ class Robot:
                         extreme_deadlock_count += 1
 
                     self.follow_path_plan(path, time_delay=0.05, check_energy=True, stop_on_unexpored=True)
+
+        def _get_obstacle_snapshot(self):
+            """Get atomic snapshot of current obstacle state"""
+            snapshot = {
+                'positions': {},
+                'velocities': {},
+                'sizes': {}
+            }
+
+            if hasattr(self, 'dynamic_obstacles') and dynamic_obstacles.obstacles:
+                for obs in dynamic_obstacles.obstacles:
+                    obs_id = obs['id']
+                    snapshot['positions'][obs_id] = obs['pos']
+                    snapshot['velocities'][obs_id] = obs.get('velocity', (0, 0))
+                    snapshot['sizes'][obs_id] = obs.get('size', 1.0)
+
+            return snapshot
 
     def select_from_wp(self, wp):
         new_wp = self.get_better_wp(wp)
