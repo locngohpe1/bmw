@@ -12,66 +12,73 @@ class VirtualCamera:
 
     def capture_image(self, robot_pos, direction):
         """Chụp ảnh xung quanh robot trong phạm vi nhìn thấy được"""
-        # Tính kích thước ảnh dựa trên khoảng cách nhìn
+        # Tăng resolution cho GoogLeNet (224x224 minimum)
         view_width = self.camera_view_distance * 2 + 1
         view_height = self.camera_view_distance * 2 + 1
 
-        # Tạo ảnh trống
-        image = np.ones((view_height * self.epsilon, view_width * self.epsilon, 3), dtype=np.uint8) * 255
+        # Tạo ảnh resolution cao cho deep learning
+        high_res_epsilon = 32  # Tăng từ 8 lên 32 cho detail tốt hơn
+        image = np.ones((view_height * high_res_epsilon, view_width * high_res_epsilon, 3), dtype=np.uint8) * 255
 
-        # Xác định góc trên bên trái của khung nhìn
-        top_left_row = robot_pos[0] - self.camera_view_distance
-        top_left_col = robot_pos[1] - self.camera_view_distance
+    def capture_obstacle_roi(self, obstacle_pos, obstacle_size):
+        """Capture specific ROI của vật cản để classify real-time"""
+        roi_size = 224  # Standard input size cho GoogLeNet
 
-        # Vẽ các ô trong tầm nhìn
-        for i in range(view_height):
-            map_row = top_left_row + i
-            for j in range(view_width):
-                map_col = top_left_col + j
+        # Get map data around obstacle position
+        x, y = obstacle_pos
+        radius = 3  # Capture 7x7 area around obstacle
 
-                # Kiểm tra xem ô có nằm trong bản đồ không
-                if 0 <= map_row < len(self.grid_map.map) and 0 <= map_col < len(self.grid_map.map[0]):
-                    cell_value = self.grid_map.map[map_row, map_col]
+        # Create high-resolution synthetic image
+        roi_image = np.ones((roi_size, roi_size, 3), dtype=np.uint8) * 128
 
-                    # Vẽ ô tương ứng trong ảnh
-                    cell_rect = (
-                        j * self.epsilon,
-                        i * self.epsilon,
-                        self.epsilon,
-                        self.epsilon
-                    )
+        # Sample từ map data xung quanh obstacle
+        for i in range(-radius, radius + 1):
+            for j in range(-radius, radius + 1):
+                map_x, map_y = x + i, y + j
 
-                    # Xác định màu sắc
-                    if cell_value == 1 or cell_value == 'o':  # Vật cản
-                        color = (0, 0, 0)  # Đen
-                    elif cell_value == 'e':  # Đã khám phá
-                        color = (0, 255, 0)  # Xanh lá
-                    else:  # Chưa khám phá
-                        color = (255, 255, 255)  # Trắng
+                if (0 <= map_x < len(self.grid_map.map) and
+                        0 <= map_y < len(self.grid_map.map[0])):
 
-                    # Vẽ ô vào ảnh
-                    cv2.rectangle(
-                        image,
-                        (cell_rect[0], cell_rect[1]),
-                        (cell_rect[0] + cell_rect[2], cell_rect[1] + cell_rect[3]),
-                        color,
-                        -1  # Filled
-                    )
+                    cell_value = self.grid_map.map[map_x, map_y]
 
-        # Vẽ robot
-        robot_center = (
-            self.camera_view_distance * self.epsilon + self.epsilon // 2,
-            self.camera_view_distance * self.epsilon + self.epsilon // 2
-        )
-        cv2.circle(image, robot_center, self.epsilon // 3, (255, 0, 0), -1)
+                    # Map grid cells to image regions
+                    img_x_start = (i + radius) * (roi_size // (2 * radius + 1))
+                    img_y_start = (j + radius) * (roi_size // (2 * radius + 1))
+                    img_x_end = img_x_start + (roi_size // (2 * radius + 1))
+                    img_y_end = img_y_start + (roi_size // (2 * radius + 1))
 
-        # Vẽ hướng của robot
-        direction_end = (
-            int(robot_center[0] + direction[1] * self.epsilon),
-            int(robot_center[1] + direction[0] * self.epsilon)
-        )
-        cv2.line(image, robot_center, direction_end, (0, 0, 255), 2)
+                    if cell_value == 'd':  # Dynamic obstacle
+                        # Add motion-like patterns
+                        color = [np.random.randint(150, 200), np.random.randint(100, 150), np.random.randint(80, 120)]
+                        roi_image[img_y_start:img_y_end, img_x_start:img_x_end] = color
+                        # Add motion blur
+                        kernel = np.ones((5, 3), np.float32) / 15
+                        roi_image[img_y_start:img_y_end, img_x_start:img_x_end] = cv2.filter2D(
+                            roi_image[img_y_start:img_y_end, img_x_start:img_x_end], -1, kernel)
 
+                    elif cell_value in (1, 'o'):  # Static obstacle
+                        # Sharp, consistent patterns
+                        color = [np.random.randint(80, 120)] * 3
+                        roi_image[img_y_start:img_y_end, img_x_start:img_x_end] = color
+
+        return roi_image
+
+    def _generate_obstacle_texture(self, height, width):
+        """Tạo texture pattern khác nhau cho static vs dynamic"""
+        base_image = np.random.randint(100, 200, (height * 32, width * 32, 3), dtype=np.uint8)
+
+        # Add movement blur cho dynamic objects
+        if hasattr(self, '_previous_positions') and len(self._previous_positions) > 0:
+            # Dynamic pattern: motion blur, varied colors
+            kernel = np.ones((5, 5), np.float32) / 25
+            base_image = cv2.filter2D(base_image, -1, kernel)
+            # Add color variation để simulate movement
+            base_image[:, :, 0] = np.clip(base_image[:, :, 0] + np.random.randint(-30, 30), 0, 255)
+        else:
+            # Static pattern: sharp edges, consistent colors
+            base_image = cv2.medianBlur(base_image, 3)
+
+        return base_image
         return image
 
     def detect_dynamic_obstacles(self, current_image, previous_image):

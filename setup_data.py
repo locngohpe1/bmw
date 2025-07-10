@@ -1,103 +1,85 @@
 # setup_data.py
 import os
+import cv2
 import numpy as np
 from PIL import Image
 
 
 def setup_training_data():
-    """Tạo cấu trúc thư mục và tạo dữ liệu mẫu để huấn luyện"""
+    """Tạo synthetic 2D obstacle data cho GoogLeNet training"""
 
-    print("Bắt đầu tạo cấu trúc thư mục và dữ liệu mẫu...")
+    print("Tạo 2D synthetic data cho obstacle classification...")
 
     # Tạo cấu trúc thư mục
     os.makedirs('data/obstacles/train/static', exist_ok=True)
     os.makedirs('data/obstacles/train/dynamic', exist_ok=True)
     os.makedirs('data/obstacles/val/static', exist_ok=True)
     os.makedirs('data/obstacles/val/dynamic', exist_ok=True)
-    os.makedirs('data/obstacles/test', exist_ok=True)
-    os.makedirs('models', exist_ok=True)
 
-    print("Đã tạo các thư mục cần thiết.")
+    # Generate static obstacle patterns (furniture-like)
+    for i in range(50):  # Tăng số lượng data
+        img_static = create_static_pattern_2d()
+        Image.fromarray(img_static).save(f'data/obstacles/train/static/static_2d_{i}.jpg')
+        if i < 10:
+            Image.fromarray(img_static).save(f'data/obstacles/val/static/static_2d_val_{i}.jpg')
 
-    # Tạo một số hình ảnh giả để test
-    # Ví dụ hình ảnh tĩnh (đồ nội thất, tường, etc.)
-    print("Đang tạo hình ảnh vật cản tĩnh...")
-    for i in range(20):
-        # Tạo hình ảnh giả cho vật cản tĩnh
-        img_static = np.ones((224, 224, 3), dtype=np.uint8) * 200  # màu xám nhạt
+    # Generate dynamic obstacle patterns (human-like movement)
+    for i in range(50):
+        img_dynamic = create_dynamic_pattern_2d()
+        Image.fromarray(img_dynamic).save(f'data/obstacles/train/dynamic/dynamic_2d_{i}.jpg')
+        if i < 10:
+            Image.fromarray(img_dynamic).save(f'data/obstacles/val/dynamic/dynamic_2d_val_{i}.jpg')
 
-        # Vẽ một số hình dạng ngẫu nhiên để tăng tính đa dạng
-        x_pos = np.random.randint(30, 150)
-        y_pos = np.random.randint(30, 150)
-        width = np.random.randint(40, 100)
-        height = np.random.randint(40, 100)
 
-        # Vẽ hình chữ nhật
-        img_static[y_pos:y_pos + height, x_pos:x_pos + width] = [120, 120, 120]
+def create_static_pattern_2d():
+    """Tạo pattern cho static obstacle (furniture, walls)"""
+    img = np.ones((224, 224, 3), dtype=np.uint8) * 200
 
-        # Thêm nhiễu ngẫu nhiên để tạo sự đa dạng
-        noise = np.random.randint(0, 30, size=(224, 224, 3), dtype=np.uint8)
-        img_static = np.clip(img_static.astype(np.int32) + noise - 15, 0, 255).astype(np.uint8)
+    # Rectangular furniture pattern
+    x_pos = np.random.randint(20, 120)
+    y_pos = np.random.randint(20, 120)
+    width = np.random.randint(60, 100)
+    height = np.random.randint(40, 80)
 
-        # Lưu hình ảnh
-        Image.fromarray(img_static).save(f'data/obstacles/train/static/static_{i}.jpg')
-        if i < 5:  # tạo vài hình cho validation
-            Image.fromarray(img_static).save(f'data/obstacles/val/static/static_val_{i}.jpg')
+    # Solid, consistent colors (furniture-like)
+    color = [np.random.randint(80, 150)] * 3  # Grayscale furniture
+    img[y_pos:y_pos + height, x_pos:x_pos + width] = color
 
-    # Ví dụ hình ảnh động (người, động vật, etc.)
-    print("Đang tạo hình ảnh vật cản động...")
-    for i in range(20):
-        # Tạo hình ảnh giả cho vật cản động
-        img_dynamic = np.ones((224, 224, 3), dtype=np.uint8) * 180  # màu xám nhạt
+    # Add sharp edges (static objects have clear boundaries)
+    cv2.rectangle(img, (x_pos, y_pos), (x_pos + width, y_pos + height), (50, 50, 50), 2)
 
-        # Vẽ hình dạng khác với vật cản tĩnh - sử dụng màu đỏ để thể hiện vật cản động
-        x_pos = np.random.randint(30, 150)
-        y_pos = np.random.randint(30, 150)
-        size = np.random.randint(30, 60)
+    return img
 
-        # Vẽ hình tròn
-        for y in range(224):
-            for x in range(224):
-                if ((x - x_pos) ** 2 + (y - y_pos) ** 2) < size ** 2:
-                    img_dynamic[y, x] = [200, 50, 50]  # màu đỏ
 
-        # Thêm nhiễu ngẫu nhiên để tạo sự đa dạng
-        noise = np.random.randint(0, 30, size=(224, 224, 3), dtype=np.uint8)
-        img_dynamic = np.clip(img_dynamic.astype(np.int32) + noise - 15, 0, 255).astype(np.uint8)
+def create_dynamic_pattern_2d():
+    """Tạo pattern cho dynamic obstacle (người, động vật)"""
+    img = np.ones((224, 224, 3), dtype=np.uint8) * 180
 
-        # Lưu hình ảnh
-        Image.fromarray(img_dynamic).save(f'data/obstacles/train/dynamic/dynamic_{i}.jpg')
-        if i < 5:  # tạo vài hình cho validation
-            Image.fromarray(img_dynamic).save(f'data/obstacles/val/dynamic/dynamic_val_{i}.jpg')
+    # Human-like shape pattern
+    x_center = np.random.randint(60, 164)
+    y_center = np.random.randint(60, 164)
 
-    # Tạo một số ảnh test
-    print("Đang tạo hình ảnh test...")
-    for i in range(5):
-        # Tạo hình vật cản tĩnh
-        img_test_static = np.ones((224, 224, 3), dtype=np.uint8) * 190
-        img_test_static[60:160, 60:160] = [110, 110, 110]  # hình vuông
-        noise = np.random.randint(0, 20, size=(224, 224, 3), dtype=np.uint8)
-        img_test_static = np.clip(img_test_static.astype(np.int32) + noise, 0, 255).astype(np.uint8)
-        Image.fromarray(img_test_static).save(f'data/obstacles/test/test_static_{i}.jpg')
+    # Body (elliptical shape)
+    cv2.ellipse(img, (x_center, y_center), (25, 40), 0, 0, 360, (120, 80, 60), -1)
 
-        # Tạo hình vật cản động
-        img_test_dynamic = np.ones((224, 224, 3), dtype=np.uint8) * 170
+    # Head
+    cv2.circle(img, (x_center, y_center - 35), 15, (140, 100, 80), -1)
 
-        # Vẽ một hình tam giác
-        for y in range(80, 180):
-            width = int((y - 80) * 0.8)
-            img_test_dynamic[y, 112 - width:112 + width] = [190, 60, 60]
+    # Motion blur effect (characteristic of moving objects)
+    kernel = np.ones((7, 3), np.float32) / 21
+    img = cv2.filter2D(img, -1, kernel)
 
-        noise = np.random.randint(0, 20, size=(224, 224, 3), dtype=np.uint8)
-        img_test_dynamic = np.clip(img_test_dynamic.astype(np.int32) + noise, 0, 255).astype(np.uint8)
-        Image.fromarray(img_test_dynamic).save(f'data/obstacles/test/test_dynamic_{i}.jpg')
+    # Color variation (movement creates lighting changes)
+    noise = np.random.randint(-20, 20, size=(224, 224, 3))
+    img = np.clip(img.astype(np.int32) + noise, 0, 255).astype(np.uint8)
 
-    print("Đã tạo xong dữ liệu mẫu để huấn luyện và test!")
-    print(f"- 20 hình vật cản tĩnh trong data/obstacles/train/static")
-    print(f"- 20 hình vật cản động trong data/obstacles/train/dynamic")
-    print(f"- 5 hình vật cản tĩnh trong data/obstacles/val/static")
-    print(f"- 5 hình vật cản động trong data/obstacles/val/dynamic")
-    print(f"- 10 hình test trong data/obstacles/test")
+    return img
+
+
+print("✅ Đã tạo xong dữ liệu mẫu để huấn luyện và test!")
+print(f"📁 Static images: data/obstacles/train/static/ (50 files)")
+print(f"📁 Dynamic images: data/obstacles/train/dynamic/ (50 files)")
+print(f"📁 Validation data: data/obstacles/val/ folders")
 
 
 if __name__ == "__main__":

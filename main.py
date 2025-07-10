@@ -462,7 +462,7 @@ class Robot:
                     self.logic.weight_map[x, y] = floor_weight + (child_region.max_y - y)
 
     def detect_and_classify_obstacles(self):
-        """Detect and classify obstacles using the virtual camera"""
+        """Detect and classify obstacles using GoogLeNet + virtual camera"""
         # Skip detection một số frames để giảm false positive
         if not hasattr(self, '_detection_skip_counter'):
             self._detection_skip_counter = 0
@@ -473,58 +473,99 @@ class Robot:
         # Get direction from robot angle
         direction = (math.cos(self.angle), math.sin(self.angle))
 
-        # Capture image from virtual camera
+        # Capture high-res image from virtual camera
         current_image = self.virtual_camera.capture_image(self.current_pos, direction)
 
-        # Detect moving obstacles
+        # Detect moving obstacles using frame differencing
         if self.previous_camera_image is not None:
             dynamic_obstacles_detected = self.virtual_camera.detect_dynamic_obstacles(
                 current_image, self.previous_camera_image
             )
 
-            # Update dynamic obstacle information
+            # NEW: Classify each detected obstacle using GoogLeNet
             for (rel_row, rel_col), (width, height) in dynamic_obstacles_detected:
-                # Bỏ qua detections quá gần robot (có thể là noise)
-                distance_from_robot = math.sqrt(rel_row ** 2 + rel_col ** 2)
-                if distance_from_robot < 2:  # Ignore detections trong bán kính 2 cells
-                    continue
-
                 # Convert relative position to absolute
                 abs_row = self.current_pos[0] + rel_row
                 abs_col = self.current_pos[1] + rel_col
 
-                # Check if position is valid
                 if not check_valid_pos((abs_row, abs_col)):
                     continue
 
-                # Tránh duplicate counting
-                pos_key = (abs_row, abs_col)
-                if pos_key not in self.detected_positions and self.map[pos_key] != 'o':
-                    self.detected_positions.add(pos_key)
-                    self.map[pos_key] = 'd'
+                # Capture ROI of the specific obstacle
+                obstacle_roi = self.virtual_camera.capture_obstacle_roi((abs_row, abs_col), (height, width))
 
-                    # Get obstacle ID or create new
-                    if pos_key in self.dynamic_obstacle_ids:
-                        obstacle_id = self.dynamic_obstacle_ids[pos_key]
-                        # Update obstacle position
-                        self.dynamic_obstacle_handler.update_obstacle(obstacle_id, pos_key)
-                    else:
-                        # Register new obstacle
-                        obstacle_id = f"obs_{self.next_obstacle_id}"
+                # Classify using GoogLeNet
+                class_name, confidence = self.obstacle_classifier.classify(obstacle_roi)
+
+                print(f"🔍 GoogLeNet Classification: {class_name} (confidence: {confidence:.3f})")
+
+                # Only accept high-confidence predictions
+                if confidence > 0.75:  # Threshold cho accuracy
+                    pos_key = (abs_row, abs_col)
+
+                    if class_name == 'dynamic' and pos_key not in self.detected_positions:
+                        self.detected_positions.add(pos_key)
+                        self.map[pos_key] = 'd'
+
+                        # Register with dynamic obstacle handler
+                        obstacle_id = f"googlet_{self.next_obstacle_id}"
                         self.next_obstacle_id += 1
                         self.dynamic_obstacle_ids[pos_key] = obstacle_id
                         self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos_key)
 
-                    # Save obstacle type
-                    self.classified_obstacles[pos_key] = ('dynamic', 0.9)
+                        # Save classification result
+                        self.classified_obstacles[pos_key] = (class_name, confidence)
+
+                    elif class_name == 'static':
+                        self.map[pos_key] = 'o'  # Mark as static obstacle
+                        self.classified_obstacles[pos_key] = (class_name, confidence)
+                else:
+                    print(f"⚠️ Low confidence detection ignored: {confidence:.3f}")
         self.previous_camera_image = current_image
 
     def check_dynamic_collision(self, target_pos):
-        """Check for collision with dynamic obstacles when moving to target_pos"""
-        # Kiểm tra nếu vị trí đích là vật cản tĩnh thì KHÔNG áp dụng waiting rule
-        if self.map[target_pos] in (1, 'o'):
-            return False  # Vật cản tĩnh - không chờ
+        """Check collision using GoogLeNet classification in real-time"""
 
+        # 🔥 NEW: Capture obstacle at target position và classify bằng GoogLeNet
+        if self.map[target_pos] in ('d', 1, 'o'):  # Có vật cản tại target
+            # Capture ROI của vật cản tại target_pos
+            obstacle_roi = self.virtual_camera.capture_obstacle_roi(target_pos, (2, 2))
+
+            # 🤖 Classify bằng GoogLeNet
+            class_name, confidence = self.obstacle_classifier.classify(obstacle_roi)
+
+            print(f"🔍 Real-time GoogLeNet: {target_pos} -> {class_name} ({confidence:.3f})")
+
+            if confidence > 0.7:  # High confidence threshold
+                if class_name == 'dynamic':
+                    # Tìm corresponding dynamic obstacle
+                    for obs in dynamic_obstacles.obstacles:
+                        obstacle_center = obs['pos']
+                        distance = math.sqrt((target_pos[0] - obstacle_center[0]) ** 2 +
+                                             (target_pos[1] - obstacle_center[1]) ** 2)
+
+                        if distance <= 1.5:  # Within obstacle range
+                            obstacle_size = obs.get('size', 1.0)
+                            if isinstance(obstacle_size, tuple):
+                                obstacle_size = max(obstacle_size)
+
+                            wait_time = 0.5 + (obstacle_size - 1.0) * 0.5
+
+                            self.waiting = True
+                            self.wait_time = wait_time
+                            self.wait_start_time = time.time()
+                            self.wait_reason = f"GoogLeNet detected DYNAMIC obstacle (conf={confidence:.2f})"
+
+                            print(f"🛑 GoogLeNet-based waiting: {wait_time:.1f}s for dynamic obstacle")
+                            return True
+
+                elif class_name == 'static':
+                    # Static obstacle - không cần wait, chỉ block movement
+                    print(f"🚫 GoogLeNet detected STATIC obstacle - blocking movement")
+                    return False  # Block movement but no waiting
+            else:
+                print(f"⚠️ Low confidence GoogLeNet result - using fallback logic")
+                # Fallback to original manual logic
         # Nếu vị trí đích là vật cản động được tạo thủ công, thì áp dụng waiting rule
         if self.map[target_pos] == 'd':
             # Kiểm tra có phải là real dynamic obstacle không
