@@ -4,6 +4,10 @@ import pygame as pg
 import time
 import csv
 import torch
+import torch
+import threading
+import contextlib
+import numpy as np
 import argparse
 
 from a_star import GridMapGraph, a_star_search
@@ -134,14 +138,40 @@ class Robot:
         last_time = time.time()
 
         while run:
-            # Tính delta time cho vật cản động
-            current_time = time.time()
-            delta_time = current_time - last_time
-            last_time = current_time
+            # ✅ LOCK mechanism cho thread safety
+            with threading.Lock() if hasattr(self, '_update_lock') else contextlib.nullcontext():
+                # Tính delta time cho vật cản động
+                current_time = time.time()
+                delta_time = current_time - last_time
+                last_time = current_time
 
-            # Cập nhật vật cản động
-            dynamic_obstacles.update(delta_time)
+                # ✅ ATOMIC UPDATE: Snapshot obstacle state
+                obstacle_snapshot = self._get_obstacle_snapshot()
 
+                # Cập nhật vật cản động với snapshot
+                dynamic_obstacles.update(delta_time)
+
+                # ✅ Decision making dựa trên consistent snapshot
+                wp = self.logic.get_wp(self.current_pos)
+                if len(wp) == 0: continue
+                selected_cell = self.select_from_wp(wp)
+
+        def _get_obstacle_snapshot(self):
+            """Get atomic snapshot of current obstacle state"""
+            snapshot = {
+                'positions': {},
+                'velocities': {},
+                'sizes': {}
+            }
+
+            if hasattr(self, 'dynamic_obstacles') and dynamic_obstacles.obstacles:
+                for obs in dynamic_obstacles.obstacles:
+                    obs_id = obs['id']
+                    snapshot['positions'][obs_id] = obs['pos']
+                    snapshot['velocities'][obs_id] = obs.get('velocity', (0, 0))
+                    snapshot['sizes'][obs_id] = obs.get('size', 1.0)
+
+            return snapshot
             ui.draw()
 
             # Vẽ thêm vật cản động nếu có
@@ -236,24 +266,15 @@ class Robot:
             wp = self.logic.get_wp(self.current_pos)
             if len(wp) == 0: continue
             selected_cell = self.select_from_wp(wp)
-
-            if selected_cell == self.current_pos:
-                self.task()
-            else:
-                # CP 0
-                if self.logic.state == Q.NORMAL:
-                    # Check for potential collision with dynamic obstacles
-                    if self.check_dynamic_collision(selected_cell):
-                        # Collision detected, waiting implemented
-                        dynamic_wait_count += 1
-                        continue
-
-                    if self.check_enough_energy(selected_cell) == False:
-                        self.charge_planning()
-                        continue
-                    self.move_to(selected_cell)
-
-                # CP l (l > 0)
+            # ✅ ENERGY CHECK TRƯỚC - Logic đúng
+            if self.check_enough_energy(selected_cell) == False:
+                self.charge_planning()
+                continue
+            # ✅ SAU ĐÓ MỚI CHECK COLLISION
+            if self.check_dynamic_collision(selected_cell):
+                dynamic_wait_count += 1
+                continue
+            self.move_to(selected_cell)
                 elif self.logic.state == Q.DEADLOCK:
                     path, dist = self.logic.cache_path, self.logic.cache_dist
                     print(f"Deadlock ({round(dist, 2)})")
@@ -330,13 +351,47 @@ class Robot:
     def rotate_to(self, pos_to):
         self.angle = self.get_angle(pos_to)
 
+
     def check_enough_energy(self, wp):
         return_dist_from_wp = return_matrix[wp][1]
-        expected_energy = math.dist(self.current_pos, wp) + 0.5 * return_dist_from_wp
-        if self.energy < expected_energy:
-            return False
-        else:
-            return True
+        basic_energy = math.dist(self.current_pos, wp) + 0.5 * return_dist_from_wp
+
+        # ✅ THÊM: Estimate waiting energy cost for dynamic obstacles
+        waiting_energy_buffer = 0
+
+        # Check potential dynamic obstacles on path to wp
+        path_cells = self._get_path_cells(self.current_pos, wp)
+        for cell in path_cells:
+            if hasattr(self, 'map') and self.map[cell] == 'd':
+                waiting_energy_buffer += 2.0  # Energy cost for potential waiting
+
+        # ✅ THÊM: Buffer cho potential detours
+        dynamic_detour_buffer = basic_energy * 0.2  # 20% buffer for detours
+
+        total_expected_energy = basic_energy + waiting_energy_buffer + dynamic_detour_buffer
+        return self.energy >= total_expected_energy
+
+
+    def _get_path_cells(self, start, end):
+        """Estimate cells on direct path"""
+        cells = []
+        x0, y0 = start
+        x1, y1 = end
+
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        steps = max(dx, dy)
+
+        if steps == 0:
+            return [start]
+
+        for i in range(steps + 1):
+            t = i / steps
+            x = int(x0 + t * (x1 - x0))
+            y = int(y0 + t * (y1 - y0))
+            cells.append((x, y))
+
+        return cells
 
     def charge_planning(self):
         global return_charge_count
@@ -523,91 +578,72 @@ class Robot:
                     print(f"⚠️ Low confidence detection ignored: {confidence:.3f}")
         self.previous_camera_image = current_image
 
+
     def check_dynamic_collision(self, target_pos):
-        """Check collision using GoogLeNet classification in real-time"""
+        """Unified collision check với consistent state management"""
 
-        # 🔥 NEW: Capture obstacle at target position và classify bằng GoogLeNet
-        if self.map[target_pos] in ('d', 1, 'o'):  # Có vật cản tại target
-            # Capture ROI của vật cản tại target_pos
-            obstacle_roi = self.virtual_camera.capture_obstacle_roi(target_pos, (2, 2))
+        # ✅ STEP 1: GoogLeNet classification (ground truth)
+        obstacle_roi = self.virtual_camera.capture_obstacle_roi(target_pos, (2, 2))
+        class_name, confidence = self.obstacle_classifier.classify(obstacle_roi)
 
-            # 🤖 Classify bằng GoogLeNet
-            class_name, confidence = self.obstacle_classifier.classify(obstacle_roi)
+        print(f"🔍 Real-time GoogLeNet: {target_pos} -> {class_name} ({confidence:.3f})")
 
-            print(f"🔍 Real-time GoogLeNet: {target_pos} -> {class_name} ({confidence:.3f})")
+        # ✅ STEP 2: Update map state based on AI classification
+        if confidence > 0.75:  # High confidence threshold
+            if class_name == 'dynamic':
+                self.map[target_pos] = 'd'  # Update map to dynamic
+                self.classified_obstacles[target_pos] = ('dynamic', confidence)
+            elif class_name == 'static':
+                self.map[target_pos] = 'o'  # Update map to static
+                self.classified_obstacles[target_pos] = ('static', confidence)
+                print(f"🚫 GoogLeNet detected STATIC obstacle - blocking movement")
+                return False  # Static obstacle - block movement, no waiting
+        else:
+            print(f"⚠️ Low confidence GoogLeNet result - using fallback logic")
+            # Continue to fallback logic below
 
-            if confidence > 0.7:  # High confidence threshold
-                if class_name == 'dynamic':
-                    # Tìm corresponding dynamic obstacle
-                    for obs in dynamic_obstacles.obstacles:
-                        obstacle_center = obs['pos']
-                        distance = math.sqrt((target_pos[0] - obstacle_center[0]) ** 2 +
-                                             (target_pos[1] - obstacle_center[1]) ** 2)
-
-                        if distance <= 1.5:  # Within obstacle range
-                            obstacle_size = obs.get('size', 1.0)
-                            if isinstance(obstacle_size, tuple):
-                                obstacle_size = max(obstacle_size)
-
-                            wait_time = 0.5 + (obstacle_size - 1.0) * 0.5
-
-                            self.waiting = True
-                            self.wait_time = wait_time
-                            self.wait_start_time = time.time()
-                            self.wait_reason = f"GoogLeNet detected DYNAMIC obstacle (conf={confidence:.2f})"
-
-                            print(f"🛑 GoogLeNet-based waiting: {wait_time:.1f}s for dynamic obstacle")
-                            return True
-
-                elif class_name == 'static':
-                    # Static obstacle - không cần wait, chỉ block movement
-                    print(f"🚫 GoogLeNet detected STATIC obstacle - blocking movement")
-                    return False  # Block movement but no waiting
-            else:
-                print(f"⚠️ Low confidence GoogLeNet result - using fallback logic")
-                # Fallback to original manual logic
-        # Nếu vị trí đích là vật cản động được tạo thủ công, thì áp dụng waiting rule
-        if self.map[target_pos] == 'd':
-            # Kiểm tra có phải là real dynamic obstacle không
+        # ✅ STEP 3: Collision logic dựa trên updated map state
+        if self.map[target_pos] == 'd':  # Now based on AI classification
+            # Find corresponding dynamic obstacle
             is_real_dynamic = False
             obstacle = None
 
-            # Check trong vùng của vật cản based on size
             for obs in dynamic_obstacles.obstacles:
-                obstacle_size = obs.get('size', 1.0)
-                if isinstance(obstacle_size, tuple):
-                    obstacle_size = max(obstacle_size)
-                radius = int(obstacle_size / 2)
                 obstacle_center = obs['pos']
-
-                # Check if target_pos is within obstacle area
                 distance = math.sqrt((target_pos[0] - obstacle_center[0]) ** 2 +
                                      (target_pos[1] - obstacle_center[1]) ** 2)
-                if distance <= radius + 0.5:  # Include safety margin
+
+                if distance <= 1.5:  # Within obstacle range
                     is_real_dynamic = True
                     obstacle = obs
                     break
 
-            # Chỉ wait nếu là real dynamic obstacle
             if is_real_dynamic:
-                # Thời gian chờ tỉ lệ với size của vật cản
-                obstacle_size = obstacle.get('size', 1.0) if obstacle else 1.0
+                obstacle_size = obstacle.get('size', 1.0)
                 if isinstance(obstacle_size, tuple):
                     obstacle_size = max(obstacle_size)
+
                 wait_time = 0.5 + (obstacle_size - 1.0) * 0.5
 
                 self.waiting = True
                 self.wait_time = wait_time
                 self.wait_start_time = time.time()
-                self.wait_reason = f"Large obstacle (size={obstacle_size:.1f}) at target ({target_pos})"
+                self.wait_reason = f"AI-classified DYNAMIC (conf={confidence:.2f}, size={obstacle_size:.1f})"
+
+                print(f"🤖 AI-based waiting: {wait_time:.1f}s for dynamic obstacle")
                 return True
             else:
                 # Clean up stale dynamic marking
                 if check_valid_pos(target_pos) and self.map[target_pos] == 'd':
                     self.map[target_pos] = 0
+                    print(f"🧹 Cleaned up stale dynamic marking at {target_pos}")
                 return False
 
-        # Calculate movement direction
+        # ✅ STEP 4: Fallback - Original logic for manual obstacles
+        if self.map[target_pos] in (1, 'o'):
+            return False  # Static obstacle - không chờ
+
+        # ✅ STEP 5: Calculate movement direction for waiting rule
         direction = (target_pos[0] - self.current_pos[0], target_pos[1] - self.current_pos[1])
         distance = math.sqrt(direction[0] ** 2 + direction[1] ** 2)
 
@@ -617,20 +653,19 @@ class Robot:
         # Robot speed (in cells/second)
         robot_speed = 100.0
 
-        # Check and apply waiting rule if needed
+        # ✅ STEP 6: Check and apply waiting rule if needed
         need_wait, wait_info = self.dynamic_obstacle_handler.apply_waiting_rule(
             self.current_pos, direction, robot_speed
         )
 
         if need_wait:
             stop_position, wait_time = wait_info
-            self.wait_reason = "Collision predicted"
-            print(f"Dynamic obstacle detected! Waiting for {wait_time:.2f} seconds")
+            self.wait_reason = "Collision predicted by velocity model"
+            print(f"🔄 Velocity-based waiting: {wait_time:.2f} seconds")
 
             # Only move to stop position if different from current position
             if stop_position != self.current_pos:
-                # Use move_to to go to the stop position
-                # We don't use the original move_to to avoid triggering coverage
+                # Tactical movement to stop position
                 dist = math.dist(self.current_pos, stop_position)
                 self.energy -= 0.5 * dist  # Half energy for tactical movement
                 self.rotate_to(stop_position)

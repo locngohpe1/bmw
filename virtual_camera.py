@@ -21,46 +21,105 @@ class VirtualCamera:
         image = np.ones((view_height * high_res_epsilon, view_width * high_res_epsilon, 3), dtype=np.uint8) * 255
 
     def capture_obstacle_roi(self, obstacle_pos, obstacle_size):
-        """Capture specific ROI của vật cản để classify real-time"""
-        roi_size = 224  # Standard input size cho GoogLeNet
-
-        # Get map data around obstacle position
+        """Enhanced ROI generation với realistic features"""
+        roi_size = 224
         x, y = obstacle_pos
-        radius = 3  # Capture 7x7 area around obstacle
 
-        # Create high-resolution synthetic image
+        # ✅ IMPROVED: Multi-frame temporal information
+        if not hasattr(self, '_obstacle_history'):
+            self._obstacle_history = {}
+
+        obs_key = f"{x}_{y}"
+        if obs_key not in self._obstacle_history':
+        self._obstacle_history[obs_key] = []
+
+    # ✅ Create base image với realistic texture
+    roi_image = self._generate_realistic_texture(x, y)
+
+    # ✅ IMPROVED: Add temporal consistency features
+    if len(self._obstacle_history[obs_key]) > 0:
+        prev_features = self._obstacle_history[obs_key][-1]
+
+        # Dynamic objects show temporal variation
+        if self.grid_map.map[x, y] == 'd':
+            # Add temporal variation (movement signatures)
+            temporal_noise = np.random.randint(-30, 30, size=(roi_size, roi_size, 3))
+            roi_image = np.clip(roi_image.astype(np.int32) + temporal_noise, 0, 255).astype(np.uint8)
+
+            # Motion blur based on estimated velocity
+            motion_kernel = np.array([[0.1, 0.2, 0.1], [0.1, 0.2, 0.1], [0.1, 0.2, 0.1]], dtype=np.float32)
+            roi_image = cv2.filter2D(roi_image, -1, motion_kernel)
+
+    # Store current features for next frame
+    current_features = np.mean(roi_image, axis=(0, 1))
+    self._obstacle_history[obs_key].append(current_features)
+    if len(self._obstacle_history[obs_key]) > 5:  # Keep last 5 frames
+        self._obstacle_history[obs_key].pop(0)
+
+    return roi_image
+
+
+    def _generate_realistic_texture(self, x, y):
+        """Generate more realistic textures based on surrounding context"""
+        roi_size = 224
         roi_image = np.ones((roi_size, roi_size, 3), dtype=np.uint8) * 128
 
-        # Sample từ map data xung quanh obstacle
-        for i in range(-radius, radius + 1):
-            for j in range(-radius, radius + 1):
-                map_x, map_y = x + i, y + j
+        # ✅ IMPROVED: Context-aware texture generation
+        # Sample larger neighborhood for context
+        context_radius = 5
+        static_count = 0
+        dynamic_count = 0
 
+        for i in range(-context_radius, context_radius + 1):
+            for j in range(-context_radius, context_radius + 1):
+                map_x, map_y = x + i, y + j
                 if (0 <= map_x < len(self.grid_map.map) and
                         0 <= map_y < len(self.grid_map.map[0])):
-
                     cell_value = self.grid_map.map[map_x, map_y]
+                    if cell_value in (1, 'o'):
+                        static_count += 1
+                    elif cell_value == 'd':
+                        dynamic_count += 1
 
-                    # Map grid cells to image regions
-                    img_x_start = (i + radius) * (roi_size // (2 * radius + 1))
-                    img_y_start = (j + radius) * (roi_size // (2 * radius + 1))
-                    img_x_end = img_x_start + (roi_size // (2 * radius + 1))
-                    img_y_end = img_y_start + (roi_size // (2 * radius + 1))
+        # Generate texture based on context
+        if static_count > dynamic_count:
+            # Static-dominant area: sharp, geometric patterns
+            roi_image = self._create_static_texture(roi_size)
+        else:
+            # Dynamic-dominant area: organic, irregular patterns
+            roi_image = self._create_dynamic_texture(roi_size)
 
-                    if cell_value == 'd':  # Dynamic obstacle
-                        # Add motion-like patterns
-                        color = [np.random.randint(150, 200), np.random.randint(100, 150), np.random.randint(80, 120)]
-                        roi_image[img_y_start:img_y_end, img_x_start:img_x_end] = color
-                        # Add motion blur
-                        kernel = np.ones((5, 3), np.float32) / 15
-                        roi_image[img_y_start:img_y_end, img_x_start:img_x_end] = cv2.filter2D(
-                            roi_image[img_y_start:img_y_end, img_x_start:img_x_end], -1, kernel)
+        return roi_image
 
-                    elif cell_value in (1, 'o'):  # Static obstacle
-                        # Sharp, consistent patterns
-                        color = [np.random.randint(80, 120)] * 3
-                        roi_image[img_y_start:img_y_end, img_x_start:img_x_end] = color
 
+    def _create_static_texture(self, size):
+        """Static obstacles: geometric, consistent patterns"""
+        img = np.ones((size, size, 3), dtype=np.uint8) * 120
+
+        # Geometric patterns (furniture-like)
+        pattern_size = size // 4
+        for i in range(0, size, pattern_size):
+            for j in range(0, size, pattern_size):
+                cv2.rectangle(img, (i, j), (i + pattern_size // 2, j + pattern_size // 2),
+                              (100, 100, 100), -1)
+
+        return img
+
+
+    def _create_dynamic_texture(self, size):
+        """Dynamic obstacles: organic, varied patterns"""
+        img = np.ones((size, size, 3), dtype=np.uint8) * 140
+
+        # Organic patterns (human-like)
+        center_x, center_y = size // 2, size // 2
+        cv2.ellipse(img, (center_x, center_y), (size // 4, size // 3), 0, 0, 360,
+                    (160, 120, 100), -1)
+
+        # Add texture variation
+        noise = np.random.randint(-20, 20, size=(size, size, 3))
+        img = np.clip(img.astype(np.int32) + noise, 0, 255).astype(np.uint8)
+
+        return img
         return roi_image
 
     def _generate_obstacle_texture(self, height, width):

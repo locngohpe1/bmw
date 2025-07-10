@@ -129,7 +129,13 @@ class Logic:
                 
                 if x < 0 or x >= len(weight_map): continue
                 if y < 0 or y >= len(weight_map[0]): continue
-                if weight_map[x, y] == -1: continue  # static obstacle only
+                if weight_map[x, y] == -1: continue  # static obstacle
+                if weight_map[x, y] == -2: continue  # ✅ THÊM: dynamic obstacle blocked
+
+                # ✅ CHECK DYNAMIC OBSTACLES trong escape path
+                if hasattr(self, 'grid_map') and self.grid_map:
+                    if self.grid_map.map[x, y] == 'd':  # Dynamic obstacle present
+                        continue  # Skip cells occupied by dynamic obstacles
 
                 new_dist = return_matrix[cur_node][1] + math.dist(cur_node, (x, y))
                 if new_dist < return_matrix[x, y][1]:

@@ -63,7 +63,7 @@ class DynamicObstacleHandler:
             del self.dynamic_obstacles[obstacle_id]
 
     def predict_collision(self, robot_pos, robot_direction, robot_speed, obstacle_id):
-        """Dự đoán có va chạm với vật cản động không"""
+        """Dự đoán va chạm với improved velocity model"""
         if obstacle_id not in self.dynamic_obstacles:
             return False, None
 
@@ -71,9 +71,35 @@ class DynamicObstacleHandler:
         obstacle_pos = obstacle['position']
         obstacle_vel = obstacle['velocity']
 
-        # Đơn vị hóa vector hướng robot
+        # ✅ IMPROVED: Tính velocity uncertainty cho human movement
+        vel_uncertainty = 0.3  # Human movement uncertainty factor
+
+        # ✅ IMPROVED: Non-linear velocity model
+        # Humans tend to slow down near obstacles
+        distance_to_robot = math.sqrt((obstacle_pos[0] - robot_pos[0]) ** 2 +
+                                      (obstacle_pos[1] - robot_pos[1]) ** 2)
+
+        if distance_to_robot < 3.0:  # Close to robot
+            # Humans slow down when near robots
+            deceleration_factor = max(0.3, distance_to_robot / 3.0)
+            adjusted_obstacle_vel = (obstacle_vel[0] * deceleration_factor,
+                                     obstacle_vel[1] * deceleration_factor)
+        else:
+            adjusted_obstacle_vel = obstacle_vel
+
+        # ✅ IMPROVED: Add velocity uncertainty
+        vel_magnitude = math.sqrt(adjusted_obstacle_vel[0] ** 2 + adjusted_obstacle_vel[1] ** 2)
+        if vel_magnitude > 0:
+            uncertainty_x = vel_uncertainty * vel_magnitude * (np.random.random() - 0.5)
+            uncertainty_y = vel_uncertainty * vel_magnitude * (np.random.random() - 0.5)
+            final_obstacle_vel = (adjusted_obstacle_vel[0] + uncertainty_x,
+                                  adjusted_obstacle_vel[1] + uncertainty_y)
+        else:
+            final_obstacle_vel = adjusted_obstacle_vel
+
+        # Continue with existing collision calculation using final_obstacle_vel
         dir_norm = math.sqrt(robot_direction[0] ** 2 + robot_direction[1] ** 2)
-        if dir_norm < 1e-6:  # Tránh chia cho 0
+        if dir_norm < 1e-6:
             return False, None
 
         norm_dir = (robot_direction[0] / dir_norm, robot_direction[1] / dir_norm)
