@@ -103,15 +103,14 @@ class Grid_Map:
                         if keys[pg.K_LSHIFT] or keys[pg.K_RSHIFT]:  # Shift + left click: dynamic obstacle
                             if self.check_valid_pos((row, col)) == False: continue
                             if self.map[row][col] == 0 and (row, col) != self.battery_pos:
-                                # Tạo vật cản động hình người: 3 hàng × 2 cột (offset từ vị trí trung tâm)
-                                shape = [(0, 0), (0, 1), (1, 0), (1, 1), (-1, 0), (-1, 1)]
+                                shape = [(0, 0), (1, 0), (-1, 0)]  #
                                 min_r = min(dr for dr, _ in shape)
                                 max_r = max(dr for dr, _ in shape)
                                 min_c = min(dc for _, dc in shape)
                                 max_c = max(dc for _, dc in shape)
 
-                                height = max_r - min_r + 1
-                                width = max_c - min_c + 1
+                                height = max_r - min_r + 1  # = 3 (head to toe)
+                                width = max_c - min_c + 1  # = 1 (shoulder width + small margin)
 
                                 obstacle_size = (height, width)
                                 obstacle_size_str = f"{height}x{width}"

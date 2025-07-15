@@ -16,7 +16,7 @@ class DynamicObstaclesManager:
 
         # đoạn code sửa
         self.human_icon = pg.image.load('assets/human_icon2.png')  # Load icon người
-        self.human_icon = pg.transform.scale(self.human_icon, (28, 28))  # Resize icon
+        self.human_icon = pg.transform.scale(self.human_icon, (24, 32))  # Resize icon
 
         # Không tự khởi tạo vật cản động nữa
         # self.initialize_obstacles()
@@ -30,23 +30,23 @@ class DynamicObstaclesManager:
 
                 # Tạo vận tốc ngẫu nhiên
                 base_velocity = (
-                    random.uniform(-0.04, 0.04),
-                    random.uniform(-0.045, 0.04)
+                    random.uniform(-0.03, 0.03),
+                    random.uniform(-0.03, 0.03)
                 )
 
                 # Đảm bảo vận tốc base không quá nhỏ
                 max_attempts = 10
                 attempt = 0
-                while (abs(base_velocity[0]) < 0.05 and abs(base_velocity[1]) < 0.05) and attempt < max_attempts:
+                while (abs(base_velocity[0]) < 0.02 and abs(base_velocity[1]) < 0.02) and attempt < max_attempts:
                     base_velocity = (
-                        random.uniform(-0.04, 0.04),
-                        random.uniform(-0.04, 0.04)
+                        random.uniform(-0.03, 0.03),
+                        random.uniform(-0.03, 0.03)
                     )
                     attempt += 1
 
                 # Nếu vẫn quá nhỏ, set một giá trị mặc định
-                if abs(base_velocity[0]) < 0.05 and abs(base_velocity[1]) < 0.05:
-                    base_velocity = (0.1, 0.1)
+                if abs(base_velocity[0]) < 0.02 and abs(base_velocity[1]) < 0.02:
+                    base_velocity = (0.025, 0.025)
 
                 # Áp dụng speed factor
                 velocity = (

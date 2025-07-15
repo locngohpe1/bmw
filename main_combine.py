@@ -933,8 +933,7 @@ def main():
     print(f"Efficiency Score: {((1 - overlap_rate / 100) * 100):.1f}% (lower overlap = better)")
     print(f"Speed Improvement: {execute_time:.1f}s total")
     print(f"Dynamic Handling: {dynamic_wait_count} waits, {len(robot.detected_positions)} unique detections")
-    print(
-        f"Energy Efficiency: {return_charge_count} charges, avg distance per charge: {coverage_length / return_charge_count:.1f}")
+    print(f"Energy Efficiency: {return_charge_count} charges, avg distance per charge: {coverage_length / return_charge_count:.1f}")
 
     # Safe access với fallback
     total_moves = getattr(robot, 'total_moves', count_cell_go_through) or 1  # Prevent division by zero

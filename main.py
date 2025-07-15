@@ -18,7 +18,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
 #parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -272,22 +272,22 @@ class Robot:
 
                     self.follow_path_plan(path, time_delay=0.05, check_energy=True, stop_on_unexpored=True)
 
-        def _get_obstacle_snapshot(self):
-            """Get atomic snapshot of current obstacle state"""
-            snapshot = {
-                'positions': {},
-                'velocities': {},
-                'sizes': {}
-            }
+    def _get_obstacle_snapshot(self):
+        """Get atomic snapshot of current obstacle state"""
+        snapshot = {
+            'positions': {},
+            'velocities': {},
+            'sizes': {}
+        }
 
-            if hasattr(self, 'dynamic_obstacles') and dynamic_obstacles.obstacles:
-                for obs in dynamic_obstacles.obstacles:
-                    obs_id = obs['id']
-                    snapshot['positions'][obs_id] = obs['pos']
-                    snapshot['velocities'][obs_id] = obs.get('velocity', (0, 0))
-                    snapshot['sizes'][obs_id] = obs.get('size', 1.0)
+        if hasattr(self, 'dynamic_obstacles') and dynamic_obstacles.obstacles:
+            for obs in dynamic_obstacles.obstacles:
+                obs_id = obs['id']
+                snapshot['positions'][obs_id] = obs['pos']
+                snapshot['velocities'][obs_id] = obs.get('velocity', (0, 0))
+                snapshot['sizes'][obs_id] = obs.get('size', 1.0)
 
-            return snapshot
+        return snapshot
 
     def select_from_wp(self, wp):
         new_wp = self.get_better_wp(wp)
@@ -655,7 +655,7 @@ class Robot:
             return False
 
         # Robot speed (in cells/second)
-        robot_speed = 100.0
+        robot_speed = 1.0
 
         # ✅ STEP 6: Check and apply waiting rule if needed
         need_wait, wait_info = self.dynamic_obstacle_handler.apply_waiting_rule(
@@ -728,8 +728,7 @@ def main():
     print(f"Efficiency Score: {((1 - overlap_rate / 100) * 100):.1f}% (lower overlap = better)")
     print(f"Speed Improvement: {execute_time:.1f}s total")
     print(f"Dynamic Handling: {dynamic_wait_count} waits, {len(robot.detected_positions)} unique detections")
-    print(
-        f"Energy Efficiency: {return_charge_count} charges, avg distance per charge: {coverage_length / return_charge_count:.1f}")
+    print(f"Energy Efficiency: {return_charge_count} charges, avg distance per charge: {coverage_length / return_charge_count:.1f}")
 
     # Safe access với fallback
     total_moves = getattr(robot, 'total_moves', count_cell_go_through) or 1  # Prevent division by zero

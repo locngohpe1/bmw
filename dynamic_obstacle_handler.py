@@ -149,7 +149,7 @@ class DynamicObstacleHandler:
         else:
             obstacle_size = raw_size
         robot_size = 1.0  # Assume robot cũng có size
-        safety_distance = (obstacle_size + robot_size) / 2 + 0.5  # Buffer thêm 0.5
+        safety_distance = (obstacle_size + robot_size) / 2 + 0.3  # Buffer thêm 0.3
 
         if closest_distance < safety_distance:
             # Sẽ có va chạm
@@ -199,7 +199,7 @@ class DynamicObstacleHandler:
             )
 
             # Nếu vật cản đứng yên hoặc di chuyển quá chậm
-            if obstacle_speed < 0.1:
+            if obstacle_speed < 0.05:
                 wait_time = 1.5  # Không chờ, tìm đường khác
                 return False, None
             # Thêm logic động để tính wait time

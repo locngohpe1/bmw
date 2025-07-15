@@ -20,6 +20,8 @@ class VirtualCamera:
         high_res_epsilon = 32  # Tăng từ 8 lên 32 cho detail tốt hơn
         image = np.ones((view_height * high_res_epsilon, view_width * high_res_epsilon, 3), dtype=np.uint8) * 255
 
+        return image
+
     def capture_obstacle_roi(self, obstacle_pos, obstacle_size):
         """Enhanced ROI generation với realistic features"""
         roi_size = 224
@@ -30,33 +32,33 @@ class VirtualCamera:
             self._obstacle_history = {}
 
         obs_key = f"{x}_{y}"
-        if obs_key not in self._obstacle_history':
-        self._obstacle_history[obs_key] = []
+        if obs_key not in self._obstacle_history:
+            self._obstacle_history[obs_key] = []
 
-    # ✅ Create base image với realistic texture
-    roi_image = self._generate_realistic_texture(x, y)
+        # ✅ Create base image với realistic texture
+        roi_image = self._generate_realistic_texture(x, y)
 
-    # ✅ IMPROVED: Add temporal consistency features
-    if len(self._obstacle_history[obs_key]) > 0:
-        prev_features = self._obstacle_history[obs_key][-1]
+        # ✅ IMPROVED: Add temporal consistency features
+        if len(self._obstacle_history[obs_key]) > 0:
+            prev_features = self._obstacle_history[obs_key][-1]
 
-        # Dynamic objects show temporal variation
-        if self.grid_map.map[x, y] == 'd':
-            # Add temporal variation (movement signatures)
-            temporal_noise = np.random.randint(-30, 30, size=(roi_size, roi_size, 3))
-            roi_image = np.clip(roi_image.astype(np.int32) + temporal_noise, 0, 255).astype(np.uint8)
+            # Dynamic objects show temporal variation
+            if self.grid_map.map[x, y] == 'd':
+                # Add temporal variation (movement signatures)
+                temporal_noise = np.random.randint(-30, 30, size=(roi_size, roi_size, 3))
+                roi_image = np.clip(roi_image.astype(np.int32) + temporal_noise, 0, 255).astype(np.uint8)
 
-            # Motion blur based on estimated velocity
-            motion_kernel = np.array([[0.1, 0.2, 0.1], [0.1, 0.2, 0.1], [0.1, 0.2, 0.1]], dtype=np.float32)
-            roi_image = cv2.filter2D(roi_image, -1, motion_kernel)
+                # Motion blur based on estimated velocity
+                motion_kernel = np.array([[0.1, 0.2, 0.1], [0.1, 0.2, 0.1], [0.1, 0.2, 0.1]], dtype=np.float32)
+                roi_image = cv2.filter2D(roi_image, -1, motion_kernel)
 
-    # Store current features for next frame
-    current_features = np.mean(roi_image, axis=(0, 1))
-    self._obstacle_history[obs_key].append(current_features)
-    if len(self._obstacle_history[obs_key]) > 5:  # Keep last 5 frames
-        self._obstacle_history[obs_key].pop(0)
+        # Store current features for next frame
+        current_features = np.mean(roi_image, axis=(0, 1))
+        self._obstacle_history[obs_key].append(current_features)
+        if len(self._obstacle_history[obs_key]) > 5:  # Keep last 5 frames
+            self._obstacle_history[obs_key].pop(0)
 
-    return roi_image
+        return roi_image
 
 
     def _generate_realistic_texture(self, x, y):
