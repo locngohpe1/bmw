@@ -24,7 +24,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Parse arguments
 parser = argparse.ArgumentParser(description='RPPO Active SLAM with Project A Environment')
-parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
@@ -535,7 +535,7 @@ class Robot:
             self.total_moves += 1
 
             # Update UI
-            ui.update_vehicle_pos(self.current_pos)
+            ui.update_vehicle_pos((int(self.current_pos[0]), int(self.current_pos[1])))
             ui.set_energy_display(self.energy)
             ui.draw()
 

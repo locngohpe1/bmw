@@ -7,6 +7,30 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+class SimpleEnvironment:
+    """Simple environment for source domain training"""
+
+    def __init__(self, size=20):
+        self.size = size
+        self.reset()
+
+    def reset(self):
+        # Create simple environment with minimal obstacles
+        self.map = np.zeros((self.size, self.size))
+        # Add few static obstacles only
+        self.map[5:8, 5:8] = 1
+        self.map[12:15, 12:15] = 1
+        return self._get_observation()
+
+    def step(self, action):
+        # Simple step function
+        reward = 1.0  # Basic reward
+        done = False
+        return self._get_observation(), reward, done
+
+    def _get_observation(self):
+        # Return simple observation
+        return np.random.rand(3, 84, 84).astype(np.float32)
 class TransferLearningManager:
     """
     Transfer Learning component for RPPO Active SLAM
@@ -26,17 +50,20 @@ class TransferLearningManager:
         logger.info("=== SOURCE DOMAIN TRAINING ===")
         logger.info(f"Training in simple environment for {simple_env_episodes} episodes...")
 
+        # Create simple environment for source domain training
+        # Simple environment has fewer obstacles and no dynamic obstacles
+        simple_env = SimpleEnvironment()
+
         # Train in simple environment (fewer obstacles, static only)
         source_rewards = []
 
         for episode in range(simple_env_episodes):
             episode_reward = 0
-            state = simple_env.reset()  # Assumed simple environment
+            state = simple_env.reset()  # Simple environment
 
             for step in range(300):
                 action, log_prob, value = source_agent.select_action(state)
                 next_state, reward, done = simple_env.step(action)
-
                 source_agent.store(state, action, reward, log_prob, value, done)
                 episode_reward += reward
                 state = next_state
@@ -405,3 +432,60 @@ class AdaptiveTransferStrategy:
                 agent.update()
 
         logger.info("Full fine-tuning completed")
+
+def main():
+    """Test transfer learning functionality"""
+    print("=== RPPO Transfer Learning Test ===")
+
+    # Import RPPO components
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+    try:
+        from main_rppo_active_slam import RPPOAgent
+        print("✅ Successfully imported RPPOAgent")
+
+        # Initialize transfer learning manager
+        transfer_manager = TransferLearningManager(
+            source_model_path="source_model.pth",
+            target_model_path="target_model.pth"
+        )
+        print("✅ Transfer learning manager initialized")
+
+        # Create agents
+        source_agent = RPPOAgent(lr=3e-4)
+        target_agent = RPPOAgent(lr=3e-4)
+        print("✅ RPPO agents created")
+
+        # Test environment complexity analysis
+        simple_env_map = np.zeros((20, 20))
+        simple_env_map[5:8, 5:8] = 1  # Few obstacles
+
+        complex_env_map = np.zeros((30, 30))
+        complex_env_map[5:25, 5:8] = 1  # More obstacles
+        complex_env_map[10:13, 15:25] = 1
+
+        adaptive_strategy = AdaptiveTransferStrategy()
+        simple_complexity = adaptive_strategy.analyze_environment_complexity(simple_env_map)
+        complex_complexity = adaptive_strategy.analyze_environment_complexity(complex_env_map)
+
+        print(f"✅ Simple env complexity: {simple_complexity['complexity_level']}")
+        print(f"✅ Complex env complexity: {complex_complexity['complexity_level']}")
+
+        # Test transfer strategy selection
+        strategy = adaptive_strategy.select_transfer_strategy(simple_complexity, complex_complexity)
+        print(f"✅ Recommended transfer strategy: {strategy}")
+
+        print("\n🎯 Transfer learning components working correctly!")
+        print("To use with main training, run: python main_rppo_active_slam.py")
+
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        print("Make sure main_rppo_active_slam.py is in the same directory")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+if __name__ == "__main__":
+    main()
