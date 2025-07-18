@@ -12,6 +12,7 @@ import torch.optim as optim
 from torch.distributions import Normal
 import cv2
 import logging
+from pathlib import Path
 
 # Import Project A components (keep environment)
 from grid_map import Grid_Map, EPSILON
@@ -368,34 +369,38 @@ class Robot:
         if self.map is not None:
             map_h, map_w = self.map.shape
 
-            # Draw explored areas in green
-            for cell in self.visited_cells:
-                cx, cy = cell[0] * 10, cell[1] * 10
-                x1, y1 = int(cx * 84 / (map_w * 10)), int(cy * 84 / (map_h * 10))
-                x2, y2 = int((cx + 10) * 84 / (map_w * 10)), int((cy + 10) * 84 / (map_h * 10))
-                if 0 <= x1 < 84 and 0 <= y1 < 84:
-                    img[y1:min(y2, 84), x1:min(x2, 84)] = [0, 1, 0]  # Green
+            # Scale factors
+            scale_x = 84.0 / map_w
+            scale_y = 84.0 / map_h
 
-            # Draw obstacles
+            # Draw map elements
             for x in range(map_h):
                 for y in range(map_w):
-                    if self.map[x, y] in ('o', 1):  # Static obstacles
-                        px = int(y * 84 / map_w)
-                        py = int(x * 84 / map_h)
-                        if 0 <= px < 84 and 0 <= py < 84:
-                            img[py, px] = [1, 0, 0]  # Red
-                    elif self.map[x, y] == 'd':  # Dynamic obstacles
-                        px = int(y * 84 / map_w)
-                        py = int(x * 84 / map_h)
-                        if 0 <= px < 84 and 0 <= py < 84:
-                            img[py, px] = [1, 0.5, 0]  # Orange
+                    px = int(y * scale_x)
+                    py = int(x * scale_y)
 
-        # Draw robot
-        if hasattr(self, 'current_pos'):
-            rx = int(self.current_pos[1] * 84 / (map_w * 10)) if 'map_w' in locals() else 42
-            ry = int(self.current_pos[0] * 84 / (map_h * 10)) if 'map_h' in locals() else 42
-            if 0 <= rx < 84 and 0 <= ry < 84:
-                img[max(0, ry - 2):min(84, ry + 3), max(0, rx - 2):min(84, rx + 3)] = [0, 0, 1]  # Blue
+                    # Ensure bounds
+                    if 0 <= px < 84 and 0 <= py < 84:
+                        if self.map[x, y] in ('o', 1):  # Static obstacles
+                            img[py, px] = [1, 0, 0]  # Red
+                        elif self.map[x, y] == 'd':  # Dynamic obstacles
+                            img[py, px] = [1, 0.5, 0]  # Orange
+                        elif self.map[x, y] == 'e':  # Explored
+                            img[py, px] = [0, 1, 0]  # Green
+                        elif self.map[x, y] in ('u', 0):  # Free space
+                            img[py, px] = [1, 1, 1]  # White
+
+            # Draw robot position
+            if hasattr(self, 'current_pos') and self.current_pos is not None:
+                rx = int(self.current_pos[1] * scale_x)
+                ry = int(self.current_pos[0] * scale_y)
+
+                # Draw robot as small blue square
+                for dx in range(-2, 3):
+                    for dy in range(-2, 3):
+                        px, py = rx + dx, ry + dy
+                        if 0 <= px < 84 and 0 <= py < 84:
+                            img[py, px] = [0, 0, 1]  # Blue
 
         return img.transpose(2, 0, 1)  # CHW format for PyTorch
 
@@ -441,8 +446,15 @@ class Robot:
         """Execute action and return environment feedback"""
         global total_travel_length, coverage_length, count_cell_go_through
 
+        if self.map is None:
+            return True, True
+
         linear_vel, angular_vel = action
         dt = 0.1
+
+        # Clamp action values
+        linear_vel = np.clip(linear_vel, 0.1, 0.5)
+        angular_vel = np.clip(angular_vel, -math.pi / 3, math.pi / 3)
 
         # Update robot orientation
         self.angle += angular_vel * dt
@@ -455,30 +467,36 @@ class Robot:
 
         # Check collisions and bounds
         collision = False
-        row_count, col_count = len(self.map), len(self.map[0])
+        row_count, col_count = self.map.shape
 
-        if (0 <= new_pos[0] < row_count and 0 <= new_pos[1] < col_count):
-            if self.map[int(new_pos[0]), int(new_pos[1])] not in ('o', 1, 'd'):
-                # Valid move
-                dist = math.sqrt(dx ** 2 + dy ** 2)
-                energy_cost = dist * 1.0  # 1 unit per distance unit
-
-                if self.energy >= energy_cost:
-                    self.current_pos = new_pos
-                    self.energy -= energy_cost
-                    total_travel_length += dist
-                    coverage_length += dist
-                    count_cell_go_through += 1
-
-                    # Mark cell as visited
-                    self.map[int(new_pos[0]), int(new_pos[1])] = 'e'
-                else:
-                    # Energy depleted, need to charge
-                    return True, True  # collision=True, energy_depleted=True
-            else:
-                collision = True
-        else:
+        # Check bounds
+        if not (0 <= new_pos[0] < row_count and 0 <= new_pos[1] < col_count):
             collision = True
+        else:
+            # Check cell content
+            cell_row, cell_col = int(new_pos[0]), int(new_pos[1])
+            if self.map[cell_row, cell_col] in ('o', 1, 'd'):
+                collision = True
+
+        if not collision:
+            # Valid move - calculate energy cost
+            dist = math.sqrt(dx ** 2 + dy ** 2)
+            energy_cost = dist * 1.0  # 1 unit per distance unit
+
+            if self.energy >= energy_cost:
+                self.current_pos = new_pos
+                self.energy -= energy_cost
+                total_travel_length += dist
+                coverage_length += dist
+                count_cell_go_through += 1
+
+                # Mark cell as explored
+                cell_row, cell_col = int(new_pos[0]), int(new_pos[1])
+                if self.map[cell_row, cell_col] in ('u', 0):
+                    self.map[cell_row, cell_col] = 'e'
+            else:
+                # Energy depleted
+                return False, True
 
         # Check if energy is critically low
         energy_depleted = self.energy < ENERGY_CAPACITY * 0.1
@@ -518,29 +536,42 @@ class Robot:
             # Select action using RPPO
             action, log_prob, value = self.agent.select_action(state)
 
-            # Execute action
-            collision, energy_depleted = self.execute_action(action)
+            # Execute action with error handling
+            try:
+                collision, energy_depleted = self.execute_action(action)
 
-            # Calculate reward
-            reward = self.calculate_reward(action, collision, energy_depleted)
-            self.episode_reward += reward
+                # Calculate reward
+                reward = self.calculate_reward(action, collision, energy_depleted)
+                self.episode_reward += reward
 
-            # Check episode termination
-            done = collision or energy_depleted or self.episode_steps >= self.max_episode_steps
+                # Check episode termination
+                done = collision or energy_depleted or self.episode_steps >= self.max_episode_steps
 
-            # Store experience
-            self.agent.store(state, action, reward, log_prob, value, done)
+                # Store experience
+                self.agent.store(state, action, reward, log_prob, value, done)
 
-            self.episode_steps += 1
-            self.total_moves += 1
+                self.episode_steps += 1
+                self.total_moves += 1
 
-            # Update UI
-            ui.update_vehicle_pos((int(self.current_pos[0]), int(self.current_pos[1])))
-            ui.set_energy_display(self.energy)
-            ui.draw()
+            except Exception as e:
+                logger.error(f"Action execution error: {e}")
+                # Set default values on error
+                collision, energy_depleted = True, False
+                reward = -1.0
+                done = True
 
-            if 'dynamic_obstacles' in globals():
-                dynamic_obstacles.draw(ui.WIN)
+            # Update UI - fix TypeError
+            try:
+                ui.update_vehicle_pos((int(self.current_pos[0]), int(self.current_pos[1])))
+                ui.set_energy_display(self.energy)
+                ui.draw()
+
+                # Draw dynamic obstacles if they exist
+                if 'dynamic_obstacles' in globals() and dynamic_obstacles:
+                    dynamic_obstacles.draw(ui.WIN)
+
+            except Exception as e:
+                logger.warning(f"UI draw error: {e}")
 
             # Display training info
             if self.episode_steps % 50 == 0:
@@ -606,7 +637,7 @@ class Robot:
 
 
 def main():
-    """Main function"""
+    """Main function with transfer learning support"""
     global ui, dynamic_obstacles, execute_time
 
     # Initialize UI (Project A environment)
@@ -629,8 +660,23 @@ def main():
         dynamic_obstacles.initialize_obstacles()
         logger.info(f"Initialized {len(ui.dynamic_obstacles)} manual dynamic obstacles")
 
+    # Optional: Load pretrained model for transfer learning
+    pretrained_model_path = 'pretrained_rppo_model.pth'
+    if Path(pretrained_model_path).exists():
+        try:
+            from rppo_transfer_learning import TransferLearningManager
+            transfer_manager = TransferLearningManager()
+            robot.agent = transfer_manager.load_pretrained_model(robot.agent, pretrained_model_path)
+            logger.info("✅ Loaded pretrained model for transfer learning")
+        except Exception as e:
+            logger.warning(f"Transfer learning load failed: {e}")
+
     logger.info("Using RPPO Active SLAM with Project A Environment")
+    logger.info(f"Map size: {ROW_COUNT}x{COL_COUNT}")
+    logger.info(f"Battery position: {battery_pos}")
+    logger.info(f"Energy capacity: {ENERGY_CAPACITY}")
     logger.info(f"GPU available: {torch.cuda.is_available()}")
+
     if torch.cuda.is_available():
         logger.info(f"GPU device: {torch.cuda.get_device_name(0)}")
 
@@ -644,6 +690,7 @@ def main():
     print(f'Total explored cells: {len(robot.visited_cells)}')
     print(f'Total training time: {execute_time:.2f}s')
     print(f'Average moves per second: {robot.total_moves / execute_time:.2f}')
+    print(f'Final energy: {robot.energy:.2f}')
 
 
 if __name__ == "__main__":

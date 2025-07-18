@@ -1,0 +1,373 @@
+{
+  "single_simple_room": {
+    "coverage_rates": [
+      0.06582278481012659,
+      0.06582278481012659,
+      0.06582278481012659,
+      0.06582278481012659,
+      0.06582278481012659
+    ],
+    "path_lengths": [
+      26,
+      26,
+      26,
+      26,
+      26
+    ],
+    "deadlock_counts": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "execution_times": [
+      12.317065477371216,
+      16.69567084312439,
+      16.67304229736328,
+      16.92769169807434,
+      17.087995290756226
+    ],
+    "steps": [
+      25,
+      25,
+      25,
+      25,
+      25
+    ],
+    "coverage_rates_mean": 0.06582278481012659,
+    "coverage_rates_std": 0.0,
+    "path_lengths_mean": 26.0,
+    "path_lengths_std": 0.0,
+    "deadlock_counts_mean": 0.0,
+    "deadlock_counts_std": 0.0,
+    "execution_times_mean": 15.940293121337891,
+    "execution_times_std": 1.8181018473435566,
+    "steps_mean": 25.0,
+    "steps_std": 0.0
+  },
+  "single_apartment_layout": {
+    "coverage_rates": [
+      0.043993231810490696,
+      0.043993231810490696,
+      0.043993231810490696,
+      0.043993231810490696,
+      0.043993231810490696
+    ],
+    "path_lengths": [
+      26,
+      26,
+      26,
+      26,
+      26
+    ],
+    "deadlock_counts": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "execution_times": [
+      26.562321186065674,
+      24.023104190826416,
+      26.837735176086426,
+      26.875616550445557,
+      26.947509288787842
+    ],
+    "steps": [
+      25,
+      25,
+      25,
+      25,
+      25
+    ],
+    "coverage_rates_mean": 0.043993231810490696,
+    "coverage_rates_std": 0.0,
+    "path_lengths_mean": 26.0,
+    "path_lengths_std": 0.0,
+    "deadlock_counts_mean": 0.0,
+    "deadlock_counts_std": 0.0,
+    "execution_times_mean": 26.249257278442382,
+    "execution_times_std": 1.1207100091772035,
+    "steps_mean": 25.0,
+    "steps_std": 0.0
+  },
+  "single_maze_environment": {
+    "coverage_rates": [
+      0.07547169811320754,
+      0.07547169811320754,
+      0.07547169811320754,
+      0.07547169811320754,
+      0.07547169811320754
+    ],
+    "path_lengths": [
+      28,
+      28,
+      28,
+      28,
+      28
+    ],
+    "deadlock_counts": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "execution_times": [
+      18.451117277145386,
+      18.436570167541504,
+      18.30623173713684,
+      18.56110382080078,
+      18.422120332717896
+    ],
+    "steps": [
+      27,
+      27,
+      27,
+      27,
+      27
+    ],
+    "coverage_rates_mean": 0.07547169811320754,
+    "coverage_rates_std": 0.0,
+    "path_lengths_mean": 28.0,
+    "path_lengths_std": 0.0,
+    "deadlock_counts_mean": 0.0,
+    "deadlock_counts_std": 0.0,
+    "execution_times_mean": 18.435428667068482,
+    "execution_times_std": 0.08113031275923999,
+    "steps_mean": 27.0,
+    "steps_std": 0.0
+  },
+  "multi_simple_room": {
+    "2_robots": {
+      "coverage_rates": [
+        0.549367088607595,
+        0.549367088607595,
+        0.549367088607595
+      ],
+      "total_path_lengths": [
+        215,
+        215,
+        215
+      ],
+      "total_deadlocks": [
+        0,
+        0,
+        0
+      ],
+      "execution_times": [
+        277.98265743255615,
+        300.1574356555939,
+        289.683963060379
+      ],
+      "steps": [
+        190,
+        190,
+        190
+      ],
+      "coverage_rates_mean": 0.549367088607595,
+      "coverage_rates_std": 0.0,
+      "total_path_lengths_mean": 215.0,
+      "total_path_lengths_std": 0.0,
+      "total_deadlocks_mean": 0.0,
+      "total_deadlocks_std": 0.0,
+      "execution_times_mean": 289.274685382843,
+      "execution_times_std": 9.057439979494719,
+      "steps_mean": 190.0,
+      "steps_std": 0.0
+    },
+    "4_robots": {
+      "coverage_rates": [
+        0.5594936708860759,
+        0.5594936708860759,
+        0.5594936708860759
+      ],
+      "total_path_lengths": [
+        217,
+        217,
+        217
+      ],
+      "total_deadlocks": [
+        0,
+        0,
+        0
+      ],
+      "execution_times": [
+        358.1476616859436,
+        355.9111211299896,
+        356.47728204727173
+      ],
+      "steps": [
+        124,
+        124,
+        124
+      ],
+      "coverage_rates_mean": 0.5594936708860759,
+      "coverage_rates_std": 0.0,
+      "total_path_lengths_mean": 217.0,
+      "total_path_lengths_std": 0.0,
+      "total_deadlocks_mean": 0.0,
+      "total_deadlocks_std": 0.0,
+      "execution_times_mean": 356.84535495440167,
+      "execution_times_std": 0.9494337481990828,
+      "steps_mean": 124.0,
+      "steps_std": 0.0
+    }
+  },
+  "multi_apartment_layout": {
+    "2_robots": {
+      "coverage_rates": [
+        0.3242784380305603,
+        0.3242784380305603,
+        0.3242784380305603
+      ],
+      "total_path_lengths": [
+        189,
+        189,
+        189
+      ],
+      "total_deadlocks": [
+        0,
+        0,
+        0
+      ],
+      "execution_times": [
+        365.8291347026825,
+        357.8131992816925,
+        356.6313796043396
+      ],
+      "steps": [
+        164,
+        164,
+        164
+      ],
+      "coverage_rates_mean": 0.3242784380305603,
+      "coverage_rates_std": 0.0,
+      "total_path_lengths_mean": 189.0,
+      "total_path_lengths_std": 0.0,
+      "total_deadlocks_mean": 0.0,
+      "total_deadlocks_std": 0.0,
+      "execution_times_mean": 360.09123786290485,
+      "execution_times_std": 4.08589195038996,
+      "steps_mean": 164.0,
+      "steps_std": 0.0
+    },
+    "4_robots": {
+      "coverage_rates": [
+        0.36717428087986465,
+        0.36717428087986465,
+        0.36717428087986465
+      ],
+      "total_path_lengths": [
+        213,
+        213,
+        213
+      ],
+      "total_deadlocks": [
+        0,
+        0,
+        0
+      ],
+      "execution_times": [
+        390.4743826389313,
+        390.89759588241577,
+        370.0670471191406
+      ],
+      "steps": [
+        89,
+        89,
+        89
+      ],
+      "coverage_rates_mean": 0.36717428087986465,
+      "coverage_rates_std": 0.0,
+      "total_path_lengths_mean": 213.0,
+      "total_path_lengths_std": 0.0,
+      "total_deadlocks_mean": 0.0,
+      "total_deadlocks_std": 0.0,
+      "execution_times_mean": 383.8130085468292,
+      "execution_times_std": 9.721398014723063,
+      "steps_mean": 89.0,
+      "steps_std": 0.0
+    }
+  },
+  "backtracking_simple_room": {
+    "with_backtracking": {
+      "coverage_rates": [
+        0.06582278481012659,
+        0.06582278481012659,
+        0.06582278481012659
+      ],
+      "path_lengths": [
+        26,
+        26,
+        26
+      ],
+      "times": [
+        16.854745149612427,
+        15.714509725570679,
+        15.203593492507935
+      ]
+    },
+    "without_backtracking": {
+      "coverage_rates": [
+        0.06582278481012659,
+        0.06582278481012659,
+        0.06582278481012659
+      ],
+      "path_lengths": [
+        26,
+        26,
+        26
+      ],
+      "times": [
+        16.175922632217407,
+        15.637154579162598,
+        15.705752611160278
+      ]
+    },
+    "coverage_rates_improvement_percent": 0.0,
+    "path_lengths_improvement_percent": 0.0,
+    "times_improvement_percent": -0.5345639741117169
+  },
+  "backtracking_apartment_layout": {
+    "with_backtracking": {
+      "coverage_rates": [
+        0.043993231810490696,
+        0.043993231810490696,
+        0.043993231810490696
+      ],
+      "path_lengths": [
+        26,
+        26,
+        26
+      ],
+      "times": [
+        24.788588285446167,
+        23.87936043739319,
+        25.035722970962524
+      ]
+    },
+    "without_backtracking": {
+      "coverage_rates": [
+        0.043993231810490696,
+        0.043993231810490696,
+        0.043993231810490696
+      ],
+      "path_lengths": [
+        26,
+        26,
+        26
+      ],
+      "times": [
+        24.913492918014526,
+        28.480198860168457,
+        29.23849868774414
+      ]
+    },
+    "coverage_rates_improvement_percent": 0.0,
+    "path_lengths_improvement_percent": 0.0,
+    "times_improvement_percent": 10.805133836802817
+  }
+}
