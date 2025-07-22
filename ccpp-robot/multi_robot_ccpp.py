@@ -12,7 +12,6 @@ from ccpp_robot_main import CCPPRobot, GridState, Position
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
 class MultiRobotCCPP:
     def __init__(self, width: int, height: int, num_robots: int, sensor_range: int = 2):
         self.width = width
@@ -20,7 +19,7 @@ class MultiRobotCCPP:
         self.num_robots = num_robots
         self.sensor_range = sensor_range
 
-        # Shared grid state for all robots
+        # Shared grid state for all robots (per paper assumption)
         self.shared_grid_state = torch.zeros((height, width), dtype=torch.int, device=device)
         self.shared_external_input = torch.zeros((height, width), dtype=torch.float32, device=device)
 
@@ -37,16 +36,14 @@ class MultiRobotCCPP:
             robot.path = [robot.position]
             robot.color = self.robot_colors[i % len(self.robot_colors)]
 
-            # Each robot has individual neural activity but shares grid state
-            # This follows paper assumption: robots share position info and treat others as obstacles
+            # CRITICAL FIX: Share both grid state AND external input (paper assumption)
             robot.grid_state = self.shared_grid_state
             robot.external_input = self.shared_external_input
-            # robot.neural_activity remains individual (not shared)
+            # Each robot maintains individual neural_activity (paper design)
 
             self.robots.append(robot)
 
         self.initialize_shared_environment()
-        self.communication_range = 8  # Communication range for robot coordination
 
     def _generate_start_positions(self, num_robots: int) -> List[Position]:
         """Generate well-distributed starting positions for robots"""
@@ -93,134 +90,96 @@ class MultiRobotCCPP:
                 self.shared_grid_state[y, x] = GridState.OBSTACLE.value
                 self.shared_external_input[y, x] = -1000.0
 
-    def get_nearby_robots(self, robot_id: int) -> List[int]:
-        """Get robots within communication range"""
-        current_robot = self.robots[robot_id]
-        nearby = []
+    def treat_other_robots_as_obstacles(self, current_robot_id: int):
+        """Paper assumption: treat other robots as obstacles"""
+        # First, reset any previous robot obstacle markings
+        for y in range(self.height):
+            for x in range(self.width):
+                if self.shared_grid_state[y, x] == GridState.OBSTACLE.value:
+                    # Check if this is a robot position (not permanent obstacle)
+                    is_robot_pos = False
+                    for robot_id, robot in enumerate(self.robots):
+                        if robot.position.x == x and robot.position.y == y:
+                            is_robot_pos = True
+                            break
 
-        for i, other_robot in enumerate(self.robots):
-            if i != robot_id:
-                distance = np.sqrt((current_robot.position.x - other_robot.position.x) ** 2 +
-                                   (current_robot.position.y - other_robot.position.y) ** 2)
-                if distance <= self.communication_range:
-                    nearby.append(i)
+                    if is_robot_pos and self.shared_external_input[y, x] != -1000.0:
+                        # This was a temporary robot obstacle, reset it
+                        self.shared_grid_state[y, x] = GridState.VISITED.value
+                        self.shared_external_input[y, x] = 0.0
 
-        return nearby
+        # Mark other robots as temporary obstacles
+        for robot_id, robot in enumerate(self.robots):
+            if robot_id != current_robot_id:
+                pos = robot.position
+                # Temporarily mark as obstacle for pathfinding
+                original_state = self.shared_grid_state[pos.y, pos.x].item()
+                if original_state != GridState.OBSTACLE.value:  # Don't override permanent obstacles
+                    self.shared_grid_state[pos.y, pos.x] = GridState.OBSTACLE.value
+
+    def restore_robot_positions(self, current_robot_id: int):
+        """Restore robot positions after pathfinding"""
+        for robot_id, robot in enumerate(self.robots):
+            if robot_id != current_robot_id:
+                pos = robot.position
+                # Restore to visited state
+                if self.shared_external_input[pos.y, pos.x] != -1000.0:  # Not a permanent obstacle
+                    self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
 
     def market_based_bidding(self, deadlock_robot_id: int) -> Optional[Position]:
-        """Algorithm 3: Market-based bidding process exactly as in paper"""
+        """Algorithm 3: Market-based bidding process EXACTLY as in paper"""
         deadlock_robot = self.robots[deadlock_robot_id]
 
         if not deadlock_robot.backtrack_list:
             return None
 
-        # Test each candidate point p starting from most recent (as in paper)
+        # Paper Algorithm 3: Test each candidate point p starting from most recent
         for candidate_point in reversed(deadlock_robot.backtrack_list):
+            # Verify candidate still has unvisited neighbors
+            neighbors = deadlock_robot.get_neighbors(candidate_point)
+            has_unvisited = any(self.shared_grid_state[n.y, n.x] == GridState.UNVISITED.value
+                                for n in neighbors)
+
+            if not has_unvisited:
+                continue
+
             # Every robot computes its Euclidean distance to p as tender price
             tender_prices = {}
-            for i, robot in enumerate(self.robots):
+            for robot_id, robot in enumerate(self.robots):
                 distance = np.sqrt((robot.position.x - candidate_point.x) ** 2 +
-                                 (robot.position.y - candidate_point.y) ** 2)
-                tender_prices[i] = distance
+                                   (robot.position.y - candidate_point.y) ** 2)
+                tender_prices[robot_id] = distance
 
             # Find minimum tender price among all robots
             min_price = min(tender_prices.values())
             deadlock_price = tender_prices[deadlock_robot_id]
 
-            # Algorithm 3 conditions from paper:
-            # If tender price of bidder Rdl is lower than any other robots, Rdl wins
+            # Paper condition: "If the tender price of the bidder Rdl is lower than any other robots"
             if deadlock_price <= min_price:
-                # Algorithm 3 condition from paper:
-                # "Moreover, Gbt should be away from the other robots so that it will not be covered by the others in a short time"
-                suitable_point = True
-                for i, robot in enumerate(self.robots):
-                    if i != deadlock_robot_id:
-                        # Check if other robots are too close to candidate point
-                        # Use communication_range as threshold for "short time" coverage
-                        if tender_prices[i] <= self.communication_range:
-                            suitable_point = False
-                            break
+                # Additional paper condition: "Gbt should be away from the other robots so
+                # that it will not be covered by the others in a short time"
+                min_distance_to_others = float('inf')
+                for robot_id, robot in enumerate(self.robots):
+                    if robot_id != deadlock_robot_id:
+                        distance = tender_prices[robot_id]
+                        min_distance_to_others = min(min_distance_to_others, distance)
 
-                if suitable_point:
+                # Use a reasonable threshold for "short time" coverage
+                short_time_threshold = 5.0  # Euclidean distance
+
+                if min_distance_to_others > short_time_threshold:
                     return candidate_point
 
-        # If all points in BTlist considered and none satisfies condition,
-        # choose most recent point as stated in paper
-        return deadlock_robot.backtrack_list[-1] if deadlock_robot.backtrack_list else None
+        # Paper: "if all the points in the BTlist have already been considered and
+        # none of them satisfies the above condition, the most recent point in the BTlist is chosen as Gbt"
+        if deadlock_robot.backtrack_list:
+            return deadlock_robot.backtrack_list[-1]
 
-    def avoid_robot_collision(self, robot_id: int, next_pos: Position) -> bool:
-        """Check if next position conflicts with other robots"""
-        for i, other_robot in enumerate(self.robots):
-            if i != robot_id:
-                # Check current position conflict
-                if next_pos == other_robot.position:
-                    return False
-
-                # Check if robots are swapping positions
-                if (next_pos == other_robot.position and
-                        self.robots[robot_id].position == other_robot.position):
-                    return False
-
-        return True
-
-    def coordinate_robot_movement(self, robot_id: int) -> Optional[Position]:
-        """Coordinate movement to avoid conflicts between robots"""
-        robot = self.robots[robot_id]
-
-        # Get candidate positions from robot's neural activity
-        neighbors = robot.get_neighbors(robot.position)
-        candidates = []
-
-        for neighbor in neighbors:
-            if self.shared_grid_state[neighbor.y, neighbor.x] == GridState.UNVISITED.value:
-                # Check collision with other robots
-                collision_free = True
-                for other_id, other_robot in enumerate(self.robots):
-                    if other_id != robot_id:
-                        # Avoid current positions and predicted next positions
-                        if (neighbor.x == other_robot.position.x and
-                            neighbor.y == other_robot.position.y):
-                            collision_free = False
-                            break
-
-                        # Avoid swapping positions
-                        if (neighbor == other_robot.position and
-                            robot.position == other_robot.position):
-                            collision_free = False
-                            break
-
-                if collision_free:
-                    activity = robot.neural_activity[neighbor.y, neighbor.x]
-                    candidates.append((neighbor, activity))
-
-        if not candidates:
-            return None
-
-        # Apply priority template to collision-free candidates
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        max_activity = candidates[0][1]
-        tolerance = 0.001
-
-        # Get top activity candidates
-        top_candidates = [pos for pos, act in candidates if abs(act - max_activity) <= tolerance]
-
-        if len(top_candidates) > 1:
-            # Apply same priority template as single robot
-            current = robot.position
-            # UP, DOWN, LEFT, RIGHT priority as in paper
-            priority_directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
-
-            for dx, dy in priority_directions:
-                target = Position(current.x + dx, current.y + dy)
-                for candidate in top_candidates:
-                    if candidate.x == target.x and candidate.y == target.y:
-                        return candidate
-
-        return candidates[0][0]  # Return highest activity collision-free position
+        return None
 
     def run_multi_robot_coverage(self, max_steps: int = 2000,
                                  dynamic_obstacles: List[Tuple[int, int]] = None) -> Dict:
-        """Main multi-robot coverage algorithm following paper"""
+        """Main multi-robot coverage algorithm following paper EXACTLY"""
         if dynamic_obstacles is None:
             dynamic_obstacles = []
 
@@ -232,16 +191,16 @@ class MultiRobotCCPP:
         while step < max_steps:
             robots_moved = False
 
-            # Process each robot
+            # Process each robot independently (paper approach)
             for robot_id, robot in enumerate(self.robots):
 
-                # 1. Update robot's individual neural activity
+                # 1. Treat other robots as obstacles (paper assumption)
+                self.treat_other_robots_as_obstacles(robot_id)
+
+                # 2. Update robot's individual neural activity
                 robot.update_neural_activity()
 
-                # 2. Get nearby robots for collision avoidance
-                self.get_nearby_robots(robot_id)
-
-                # 3. Update backtrack list
+                # 3. Update backtrack list (Algorithm 1)
                 robot.update_backtrack_list()
 
                 # 4. Detect dynamic obstacles
@@ -250,8 +209,8 @@ class MultiRobotCCPP:
                     self.shared_grid_state[obs_y, obs_x] = GridState.OBSTACLE.value
                     self.shared_external_input[obs_y, obs_x] = -1000.0
 
-                # 5. Try normal movement first (avoiding other robots)
-                next_pos = self.coordinate_robot_movement(robot_id)
+                # 5. Try normal movement first (using priority template)
+                next_pos = robot.select_next_position_with_priority()
 
                 if next_pos is not None:
                     # Normal movement
@@ -265,27 +224,54 @@ class MultiRobotCCPP:
                 elif robot.is_deadlock():
                     # 6. Deadlock situation - use market-based bidding (Algorithm 3)
                     robot_statistics[robot_id]['deadlocks'] += 1
-                    # Market-based bidding for backtrack point selection exactly as paper
+
+                    # CRITICAL: Market-based bidding exactly as in paper
                     backtrack_point = self.market_based_bidding(robot_id)
+
                     if backtrack_point:
-                        # Plan collision-free path to backtrack point
-                        path = self.plan_collision_free_path(robot_id, backtrack_point)
+                        # Plan path to backtrack point using Dynamic A*
+                        path = robot.dynamic_a_star(robot.position, backtrack_point)
+
                         if path and len(path) > 1:
                             # Move along path
                             for pos in path[1:]:  # Skip current position
-
                                 robot.position = pos
-
                                 robot.path.append(pos)
 
+                                # Mark path cells as visited if they were unvisited
                                 if self.shared_grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                                     self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
-
                                     self.shared_external_input[pos.y, pos.x] = 0.0
 
                             robots_moved = True
-
                             robot_statistics[robot_id]['path_length'] += len(path) - 1
+                        else:
+                            # Cannot reach backtrack point, remove it
+                            if backtrack_point in robot.backtrack_list:
+                                robot.backtrack_list.remove(backtrack_point)
+                else:
+                    # No valid moves and not deadlock - check for remaining work
+                    total_unvisited = torch.sum(self.shared_grid_state == GridState.UNVISITED.value).item()
+                    if total_unvisited > 0 and robot.backtrack_list:
+                        # Try backtracking anyway
+                        robot_statistics[robot_id]['deadlocks'] += 1
+                        backtrack_point = robot.select_best_backtrack_point()
+
+                        if backtrack_point:
+                            path = robot.dynamic_a_star(robot.position, backtrack_point)
+                            if path and len(path) > 1:
+                                for pos in path[1:]:
+                                    robot.position = pos
+                                    robot.path.append(pos)
+                                    if self.shared_grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
+                                        self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
+                                        self.shared_external_input[pos.y, pos.x] = 0.0
+                                robots_moved = True
+                                robot_statistics[robot_id]['path_length'] += len(path) - 1
+
+                # 7. Restore robot positions for next robot
+                self.restore_robot_positions(robot_id)
+
                 robot_statistics[robot_id]['steps'] += 1
 
             # Calculate coverage rate
@@ -297,8 +283,9 @@ class MultiRobotCCPP:
 
             coverage_history.append(coverage_rate)
 
-            # Check termination conditions
-            if coverage_rate >= 0.98 or not robots_moved:
+            # Check termination conditions - paper doesn't specify early termination at 98%
+            total_unvisited = torch.sum(self.shared_grid_state == GridState.UNVISITED.value).item()
+            if total_unvisited == 0 or not robots_moved:
                 break
 
             step += 1
@@ -311,57 +298,6 @@ class MultiRobotCCPP:
             'total_path_length': sum(stats['path_length'] for stats in robot_statistics.values()),
             'total_deadlocks': sum(stats['deadlocks'] for stats in robot_statistics.values())
         }
-
-    def plan_collision_free_path(self, robot_id: int, goal: Position) -> List[Position]:
-        """Plan path avoiding other robots using modified A*"""
-        robot = self.robots[robot_id]
-
-        def heuristic(pos: Position) -> float:
-            return abs(pos.x - goal.x) + abs(pos.y - goal.y)
-
-        def is_occupied_by_robot(pos: Position) -> bool:
-            for i, other_robot in enumerate(self.robots):
-                if i != robot_id and other_robot.position == pos:
-                    return True
-            return False
-
-        # Use counter to ensure unique ordering for heapq
-        counter = 0
-        open_set = [(0, counter, robot.position)]
-        came_from = {}
-        g_score = {robot.position: 0}
-
-        while open_set:
-            current_f, _, current = heapq.heappop(open_set)
-
-            if current == goal:
-                # Reconstruct path
-                path = []
-                while current in came_from:
-                    path.append(current)
-                    current = came_from[current]
-                path.append(robot.position)
-                return path[::-1]
-
-            for neighbor in robot.get_neighbors(current):
-                # Skip obstacles
-                if self.shared_grid_state[neighbor.y, neighbor.x] == GridState.OBSTACLE.value:
-                    continue
-
-                # Skip positions occupied by other robots (with some tolerance)
-                if is_occupied_by_robot(neighbor) and neighbor != goal:
-                    continue
-
-                tentative_g = g_score[current] + 1
-
-                if neighbor not in g_score or tentative_g < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g
-                    f_score = tentative_g + heuristic(neighbor)
-                    counter += 1
-                    heapq.heappush(open_set, (f_score, counter, neighbor))
-
-        return []  # No path found
 
     def visualize_multi_robot(self, save_path: str = None):
         """Visualize multi-robot coverage state"""
@@ -405,17 +341,16 @@ class MultiRobotCCPP:
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
-        # Plot 2: Neural activity landscape
-        activity_np = self.robots[0].neural_activity.cpu().numpy()
-        im = ax2.imshow(activity_np, origin='lower', cmap='viridis')
-        ax2.set_title('Shared Neural Activity Landscape')
-        plt.colorbar(im, ax=ax2)
-
-        # Mark robot positions on activity plot
-        for i, robot in enumerate(self.robots):
-            color = color_map.get(robot.color, 'black')
-            ax2.plot(robot.position.x, robot.position.y, 'o',
-                     color=color, markersize=10, markeredgecolor='white', markeredgewidth=1)
+        # Plot 2: Coverage rate comparison
+        ax2.bar(range(len(self.robots)),
+                [len(robot.path) for robot in self.robots],
+                color=[color_map.get(robot.color, 'black') for robot in self.robots],
+                alpha=0.7)
+        ax2.set_xlabel('Robot ID')
+        ax2.set_ylabel('Path Length')
+        ax2.set_title('Robot Workload Distribution')
+        ax2.set_xticks(range(len(self.robots)))
+        ax2.set_xticklabels([f'R{i + 1}' for i in range(len(self.robots))])
 
         plt.tight_layout()
 
@@ -441,7 +376,7 @@ if __name__ == "__main__":
     # Dynamic obstacles
     dynamic_obstacles = [(15, 8), (16, 9)]
 
-    print("Starting multi-robot coverage...")
+    print("Starting FIXED multi-robot coverage...")
     start_time = time.time()
 
     # Run multi-robot coverage
@@ -451,7 +386,7 @@ if __name__ == "__main__":
     end_time = time.time()
 
     # Print results
-    print(f"\nMulti-Robot Coverage Results:")
+    print(f"\nFIXED Multi-Robot Coverage Results:")
     print(f"Total steps: {results['total_steps']}")
     print(f"Coverage rate: {results['coverage_rate']:.2%}")
     print(f"Total path length: {results['total_path_length']}")
@@ -465,34 +400,3 @@ if __name__ == "__main__":
 
     # Visualize results
     multi_robot.visualize_multi_robot()
-
-    # Plot coverage progress
-    plt.figure(figsize=(12, 5))
-
-    plt.subplot(1, 2, 1)
-    plt.plot(results['coverage_history'])
-    plt.title('Multi-Robot Coverage Progress')
-    plt.xlabel('Steps')
-    plt.ylabel('Coverage Rate')
-    plt.grid(True)
-
-    plt.subplot(1, 2, 2)
-    robot_ids = list(results['robot_statistics'].keys())
-    path_lengths = [results['robot_statistics'][rid]['path_length'] for rid in robot_ids]
-    deadlock_counts = [results['robot_statistics'][rid]['deadlocks'] for rid in robot_ids]
-
-    x = np.arange(len(robot_ids))
-    width = 0.35
-
-    plt.bar(x - width / 2, path_lengths, width, label='Path Length', alpha=0.8)
-    plt.bar(x + width / 2, deadlock_counts, width, label='Deadlocks', alpha=0.8)
-
-    plt.xlabel('Robot ID')
-    plt.ylabel('Count')
-    plt.title('Robot Performance Comparison')
-    plt.xticks(x, [f'Robot {i + 1}' for i in robot_ids])
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.show()
