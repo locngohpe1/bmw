@@ -263,28 +263,29 @@ class MultiRobotCCPP:
                     robot_statistics[robot_id]['path_length'] += 1
 
                 elif robot.is_deadlock():
-                    # 6. Deadlock situation - use market-based bidding
+                    # 6. Deadlock situation - use market-based bidding (Algorithm 3)
                     robot_statistics[robot_id]['deadlocks'] += 1
-
-                    # Market-based bidding for backtrack point selection
+                    # Market-based bidding for backtrack point selection exactly as paper
                     backtrack_point = self.market_based_bidding(robot_id)
-
                     if backtrack_point:
                         # Plan collision-free path to backtrack point
                         path = self.plan_collision_free_path(robot_id, backtrack_point)
-
                         if path and len(path) > 1:
                             # Move along path
                             for pos in path[1:]:  # Skip current position
+
                                 robot.position = pos
+
                                 robot.path.append(pos)
+
                                 if self.shared_grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                                     self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
+
                                     self.shared_external_input[pos.y, pos.x] = 0.0
 
                             robots_moved = True
-                            robot_statistics[robot_id]['path_length'] += len(path) - 1
 
+                            robot_statistics[robot_id]['path_length'] += len(path) - 1
                 robot_statistics[robot_id]['steps'] += 1
 
             # Calculate coverage rate
