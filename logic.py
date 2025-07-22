@@ -3,10 +3,8 @@ import numpy as np
 from collections import deque
 
 LOCAL_NEIGHBOR_0_WIDTH = 3
-LOCAL_NEIGHBOR_L_WIDTH = 3 # in MAPS level > 0
 
 neighbors = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
-# neighbors = [(-1, 0), (0, -1), (1, 0), (0, 1)]
 
 class Q: # State in paper
     START, NORMAL, DEADLOCK, FINISH = range(4)

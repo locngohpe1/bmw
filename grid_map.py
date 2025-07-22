@@ -25,16 +25,6 @@ GAP = 3
 
 pg.init()
 font = pg.font.SysFont(None, 30)
-
-def hsv2rgb(h, s, v): 
-    (r, g, b) = colorsys.hsv_to_rgb(h, s, v) 
-    return (int(255*r), int(255*g), int(255*b)) 
- 
-def getDistinctColors(n): 
-    huePartition = 1.0 / (n + 1) 
-    # return [hsv2rgb(huePartition * value, 1.0, 1.0) for value in range(0, n)]
-    return [LIGHT_BLUE] * n
-
 class Grid_Map:
     def __init__(self):
         # pg.init()
@@ -259,44 +249,6 @@ class Grid_Map:
 
                 pg.draw.rect(self.WIN,
                             color,
-                            [EPSILON * col + BORDER,
-                            EPSILON * row + BORDER,
-                            EPSILON - BORDER,
-                            EPSILON - BORDER])
-
-        pg.display.flip()
-    
-    def illustrate_inner_special_regions(self, special_areas, inner_special_areas):
-        self.WIN.fill(BLACK)
-        pg.draw.rect(self.WIN, (238, 238, 238), self.info_bar)
-
-        for row in range(len(self.map)):
-            for col in range(len(self.map[0])):
-                color = BLACK
-
-                if self.map[row, col] == 0:
-                    color = WHITE
-
-                pg.draw.rect(self.WIN,
-                            color,
-                            [EPSILON * col + BORDER,
-                            EPSILON * row + BORDER,
-                            EPSILON - BORDER,
-                            EPSILON - BORDER])
-        
-        for region in special_areas:
-            for (row, col) in region.cell_list:
-                pg.draw.rect(self.WIN,
-                            LIGHT_BLUE,
-                            [EPSILON * col + BORDER,
-                            EPSILON * row + BORDER,
-                            EPSILON - BORDER,
-                            EPSILON - BORDER])
-        
-        for region in inner_special_areas:
-            for (row, col) in region.cell_list:
-                pg.draw.rect(self.WIN,
-                            LIGHT_ORANGE,
                             [EPSILON * col + BORDER,
                             EPSILON * row + BORDER,
                             EPSILON - BORDER,

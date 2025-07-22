@@ -2,7 +2,6 @@ import math
 import numpy as np
 import pygame as pg
 import time
-import csv
 import torch
 import threading
 import contextlib
@@ -19,7 +18,6 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
 parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
-#parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
@@ -106,13 +104,6 @@ class Robot:
         self.wait_time = 0
         self.wait_start_time = 0
         self.wait_reason = ""  # Lý do chờ đợi để hiển thị
-
-        # Previous camera image for motion detection
-        self.previous_camera_image = None
-
-        # Essential tracking only
-        self.total_moves = 0
-        self.detected_positions = set()  # Cần thiết cho detect_and_classify_obstacles
 
     def set_map(self, environment):
         row_count, col_count = len(environment), len(environment[0])

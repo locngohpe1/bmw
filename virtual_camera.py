@@ -8,7 +8,6 @@ class VirtualCamera:
         self.grid_map = grid_map
         self.epsilon = epsilon
         self.camera_view_distance = 5  # Khoảng cách camera có thể nhìn thấy (đơn vị ô lưới)
-        self._frame_counter = 0
 
     def capture_image(self, robot_pos, direction):
         """Chụp ảnh xung quanh robot trong phạm vi nhìn thấy được"""
@@ -59,7 +58,6 @@ class VirtualCamera:
             self._obstacle_history[obs_key].pop(0)
 
         return roi_image
-
 
     def _generate_realistic_texture(self, x, y):
         """Generate more realistic textures based on surrounding context"""
