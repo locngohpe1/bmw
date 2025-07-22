@@ -501,7 +501,7 @@ if __name__ == "__main__":
 
     # Save results
     demo.save_results(results)
-    print("\n" + "=" * 68)
+    print("\n" + "=" * 60)
     print("EVALUATION COMPLETE")
     print("=" * 60)
     print("\nKey Findings:")
