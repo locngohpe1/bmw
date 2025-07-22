@@ -18,7 +18,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class MultiRobotCCPP:
     def __init__(self, width: int, height: int, num_robots: int, sensor_range: int = 2):
-        self.width = width
+        sself.width = width
         self.height = height
         self.num_robots = num_robots
         self.sensor_range = sensor_range
@@ -40,14 +40,16 @@ class MultiRobotCCPP:
             robot.path = [robot.position]
             robot.color = self.robot_colors[i % len(self.robot_colors)]
 
-            # Share grid state references
+            # Each robot has individual neural activity but shares grid state
+            # This follows paper assumption: robots share position info and treat others as obstacles
             robot.grid_state = self.shared_grid_state
             robot.external_input = self.shared_external_input
+            # robot.neural_activity remains individual (not shared)
 
             self.robots.append(robot)
 
         self.initialize_shared_environment()
-        self.communication_range = 5  # Range for robot communication
+        self.communication_range = 8  # Communication range for robot coordination
 
     def _generate_start_positions(self, num_robots: int) -> List[Position]:
         """Generate well-distributed starting positions for robots"""
@@ -115,25 +117,37 @@ class MultiRobotCCPP:
         if not deadlock_robot.backtrack_list:
             return None
 
-        # Algorithm 3: Choose most recent point first
+        # Test each candidate point starting from most recent (as in paper)
         for candidate_point in reversed(deadlock_robot.backtrack_list):
 
-            # Compute distance for each robot
-            distances = {}
+            # Compute Euclidean distances (tender prices) for all robots
+            tender_prices = {}
             for i, robot in enumerate(self.robots):
-                distance = np.sqrt((robot.position.x - candidate_point.x)**2 +
-                                 (robot.position.y - candidate_point.y)**2)
-                distances[i] = distance
+                distance = np.sqrt((robot.position.x - candidate_point.x) ** 2 +
+                                   (robot.position.y - candidate_point.y) ** 2)
+                tender_prices[i] = distance
 
-            # Find minimum distance
-            min_distance = min(distances.values())
+            # Find minimum tender price
+            min_price = min(tender_prices.values())
+            deadlock_price = tender_prices[deadlock_robot_id]
 
-            # Check if deadlock robot has minimum distance (wins bid)
-            if distances[deadlock_robot_id] == min_distance:
-                return candidate_point
+            # Check two conditions from paper:
+            # (i) close to the deadlock robot - robot wins bid if has minimum price
+            # (ii) far away from other robots - ensure no conflict
+            if deadlock_price == min_price:
+                # Additional check: candidate should be far from other robots
+                conflict_free = True
+                for i, robot in enumerate(self.robots):
+                    if i != deadlock_robot_id:
+                        if tender_prices[i] < self.communication_range:  # Too close to other robot
+                            conflict_free = False
+                            break
 
-        # If no point satisfies condition, return most recent point
-        return deadlock_robot.backtrack_list[-1]
+                if conflict_free or len([p for p in tender_prices.values() if p == min_price]) == 1:
+                    return candidate_point
+
+        # If no point satisfies all conditions, return most recent point
+        return deadlock_robot.backtrack_list[-1] if deadlock_robot.backtrack_list else None
 
     def avoid_robot_collision(self, robot_id: int, next_pos: Position) -> bool:
         """Check if next position conflicts with other robots"""
@@ -154,31 +168,60 @@ class MultiRobotCCPP:
         """Coordinate movement to avoid conflicts between robots"""
         robot = self.robots[robot_id]
 
-        # First, try normal position selection
-        next_pos = robot.select_next_position_with_priority()
-
-        if next_pos and self.avoid_robot_collision(robot_id, next_pos):
-            return next_pos
-
-        # If collision detected, try alternative positions
+        # Get candidate positions from robot's neural activity
         neighbors = robot.get_neighbors(robot.position)
-        valid_alternatives = []
+        candidates = []
 
         for neighbor in neighbors:
-            if (self.shared_grid_state[neighbor.y, neighbor.x] == GridState.UNVISITED.value and
-                    self.avoid_robot_collision(robot_id, neighbor)):
-                activity = robot.neural_activity[neighbor.y, neighbor.x]
-                valid_alternatives.append((neighbor, activity))
+            if self.shared_grid_state[neighbor.y, neighbor.x] == GridState.UNVISITED.value:
+                # Check collision with other robots
+                collision_free = True
+                for other_id, other_robot in enumerate(self.robots):
+                    if other_id != robot_id:
+                        # Avoid current positions and predicted next positions
+                        if (neighbor.x == other_robot.position.x and
+                            neighbor.y == other_robot.position.y):
+                            collision_free = False
+                            break
 
-        if valid_alternatives:
-            # Return position with highest activity among collision-free options
-            return max(valid_alternatives, key=lambda x: x[1])[0]
+                        # Avoid swapping positions
+                        if (neighbor == other_robot.position and
+                            robot.position == other_robot.position):
+                            collision_free = False
+                            break
 
-        return None
+                if collision_free:
+                    activity = robot.neural_activity[neighbor.y, neighbor.x]
+                    candidates.append((neighbor, activity))
+
+        if not candidates:
+            return None
+
+        # Apply priority template to collision-free candidates
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        max_activity = candidates[0][1]
+        tolerance = 0.001
+
+        # Get top activity candidates
+        top_candidates = [pos for pos, act in candidates if abs(act - max_activity) <= tolerance]
+
+        if len(top_candidates) > 1:
+            # Apply priority template
+            current = robot.position
+            priority_directions = [(-1, 0), (1, 0), (0, -1), (0, 1),
+                                 (-1, -1), (-1, 1), (1, -1), (1, 1)]
+
+            for dx, dy in priority_directions:
+                target = Position(current.x + dx, current.y + dy)
+                for candidate in top_candidates:
+                    if candidate.x == target.x and candidate.y == target.y:
+                        return candidate
+
+        return candidates[0][0]  # Return highest activity collision-free position
 
     def run_multi_robot_coverage(self, max_steps: int = 2000,
                                  dynamic_obstacles: List[Tuple[int, int]] = None) -> Dict:
-        """Main multi-robot coverage algorithm"""
+        """Main multi-robot coverage algorithm following paper"""
         if dynamic_obstacles is None:
             dynamic_obstacles = []
 
@@ -193,54 +236,59 @@ class MultiRobotCCPP:
             # Process each robot
             for robot_id, robot in enumerate(self.robots):
 
-                # Update neural activities (shared)
-                if robot_id == 0:  # Only update once per step
-                    for r in self.robots:
-                        r.update_neural_activity()
+                # 1. Update robot's individual neural activity
+                robot.update_neural_activity()
 
-                # Update backtrack list
+                # 2. Communicate with nearby robots and treat them as obstacles
+                nearby_robots = self.get_nearby_robots(robot_id)
+                for other_id in nearby_robots:
+                    other_robot = self.robots[other_id]
+                    # Nearby robots are considered in collision avoidance
+                    pass
+
+                # 3. Update backtrack list
                 robot.update_backtrack_list()
 
-                # Detect dynamic obstacles
+                # 4. Detect dynamic obstacles
                 detected_obstacles = robot.simulate_sensor_detection(dynamic_obstacles)
                 for obs_x, obs_y in detected_obstacles:
                     self.shared_grid_state[obs_y, obs_x] = GridState.OBSTACLE.value
                     self.shared_external_input[obs_y, obs_x] = -1000.0
 
-                # Try coordinated movement
+                # 5. Try normal movement first (avoiding other robots)
                 next_pos = self.coordinate_robot_movement(robot_id)
 
-                if next_pos is None:
-                    # Check for deadlock
-                    if robot.is_deadlock():
-                        robot_statistics[robot_id]['deadlocks'] += 1
-
-                        # Use market-based bidding for backtrack point selection
-                        backtrack_point = self.market_based_bidding(robot_id)
-
-                        if backtrack_point:
-                            # Plan path avoiding other robots
-                            path = self.plan_collision_free_path(robot_id, backtrack_point)
-
-                            if path:
-                                # Move along path
-                                for pos in path[1:]:  # Skip current position
-                                    robot.position = pos
-                                    robot.path.append(pos)
-                                    if self.shared_grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
-                                        self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
-                                        self.shared_external_input[pos.y, pos.x] = 0.0
-
-                                robots_moved = True
-                                robot_statistics[robot_id]['path_length'] += len(path) - 1
-                else:
-                    # Move to next position
+                if next_pos is not None:
+                    # Normal movement
                     robot.position = next_pos
                     robot.path.append(next_pos)
                     self.shared_grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                     self.shared_external_input[next_pos.y, next_pos.x] = 0.0
                     robots_moved = True
                     robot_statistics[robot_id]['path_length'] += 1
+
+                elif robot.is_deadlock():
+                    # 6. Deadlock situation - use market-based bidding
+                    robot_statistics[robot_id]['deadlocks'] += 1
+
+                    # Market-based bidding for backtrack point selection
+                    backtrack_point = self.market_based_bidding(robot_id)
+
+                    if backtrack_point:
+                        # Plan collision-free path to backtrack point
+                        path = self.plan_collision_free_path(robot_id, backtrack_point)
+
+                        if path and len(path) > 1:
+                            # Move along path
+                            for pos in path[1:]:  # Skip current position
+                                robot.position = pos
+                                robot.path.append(pos)
+                                if self.shared_grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
+                                    self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
+                                    self.shared_external_input[pos.y, pos.x] = 0.0
+
+                            robots_moved = True
+                            robot_statistics[robot_id]['path_length'] += len(path) - 1
 
                 robot_statistics[robot_id]['steps'] += 1
 

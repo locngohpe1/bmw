@@ -58,6 +58,7 @@ class CCPPRobot:
         self.position = Position(0, 0)
         self.backtrack_list = []
         self.path = [self.position]
+        self.deadlock_count = 0  # Initialize deadlock counter
 
         # 8-directional movement as in paper
         self.directions = [
@@ -107,15 +108,18 @@ class CCPPRobot:
         return neighbors
 
     def calculate_connection_weight(self, pos1: Position, pos2: Position) -> float:
-        """Calculate connection weight between two positions"""
-        distance = max(abs(pos1.x - pos2.x), abs(pos1.y - pos2.y))  # Chebyshev distance for 8-connectivity
+        """Calculate connection weight - Equation (3) from paper: f(a) = m/a"""
+        # Use Euclidean distance as in paper, not Chebyshev
+        distance = np.sqrt((pos1.x - pos2.x) ** 2 + (pos1.y - pos2.y) ** 2)
+
+        # Equation (3): f(a) = m/a if 0 < a ≤ r0, 0 if a > r0
         if 0 < distance <= self.r0:
             return self.m / distance
         return 0.0
 
     def update_neural_activity(self):
-        """Update neural activities using shunting short-memory model"""
-        dt = 0.01  # Smaller time step to prevent overflow
+        """Update neural activities using shunting short-memory model - Equation (1) from paper"""
+        dt = 0.1  # Time step
 
         # Create new activity tensor
         new_activity = torch.zeros_like(self.neural_activity)
@@ -123,119 +127,147 @@ class CCPPRobot:
         for y in range(self.height):
             for x in range(self.width):
                 current_pos = Position(x, y)
-                current_activity = self.neural_activity[y, x]
-                external_input = self.external_input[y, x]
+                current_activity = self.neural_activity[y, x].item()
+                external_input = self.external_input[y, x].item()
 
-                # Prevent inf values
-                if torch.isinf(current_activity) or torch.isnan(current_activity):
-                    current_activity = 0.0
-
-                # Calculate neighbor influence
-                neighbor_influence = 0.0
+                # Calculate neighbor influence - Σ(vij[xj]+)
+                neighbor_excitation = 0.0
                 neighbors = self.get_neighbors(current_pos)
 
                 for neighbor in neighbors:
-                    neighbor_activity = self.neural_activity[neighbor.y, neighbor.x]
-                    if torch.isinf(neighbor_activity) or torch.isnan(neighbor_activity):
-                        neighbor_activity = 0.0
-
+                    neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
                     weight = self.calculate_connection_weight(current_pos, neighbor)
+                    # Only positive activities contribute ([xj]+)
                     if neighbor_activity > 0:
-                        neighbor_influence += weight * neighbor_activity
+                        neighbor_excitation += weight * neighbor_activity
 
-                # Clamp neighbor influence to prevent explosion
-                neighbor_influence = min(neighbor_influence, self.B)
+                # Equation (1): dxi/dt = -Axi + (B-xi)[Ii+ + Σvij*xj+] - (D+xi)[Ii-]
+                # Split external input into positive and negative parts
+                Ii_positive = max(0, external_input)  # [Ii]+
+                Ii_negative = max(0, -external_input)  # [Ii]-
 
-                # Shunting equation with clamping
-                if external_input >= 0:  # Positive input (unvisited)
-                    excitation = min(external_input + neighbor_influence, self.B)
-                    delta = (-self.A * current_activity +
-                            (self.B - current_activity) * excitation)
-                else:  # Negative input (obstacle)
-                    inhibition = min(abs(external_input), self.D)
-                    delta = (-self.A * current_activity -
-                            (self.D + current_activity) * inhibition)
+                # Calculate derivative
+                excitatory_term = (self.B - current_activity) * (Ii_positive + neighbor_excitation)
+                inhibitory_term = (self.D + current_activity) * Ii_negative
 
-                # Update with clamping
-                new_val = current_activity + dt * delta
-                new_activity[y, x] = torch.clamp(new_val, 0.0, self.B)
+                dxi_dt = -self.A * current_activity + excitatory_term - inhibitory_term
+
+                # Update with Euler method
+                new_val = current_activity + dt * dxi_dt
+                new_activity[y, x] = max(0.0, min(new_val, self.B))  # Clamp to [0, B]
 
         self.neural_activity = new_activity
 
     def select_next_position_with_priority(self) -> Optional[Position]:
-        """Select next position using neural activity and priority template"""
+        """Select next position using priority template from paper Section 3.1.2"""
         current = self.position
         neighbors = self.get_neighbors(current)
 
-        # Get all valid unvisited neighbors with their activities
+        # Get valid unvisited neighbors with their activities
         candidates = []
         for neighbor in neighbors:
             if self.grid_state[neighbor.y, neighbor.x] == GridState.UNVISITED.value:
-                activity = self.neural_activity[neighbor.y, neighbor.x]
+                activity = self.neural_activity[neighbor.y, neighbor.x].item()
                 candidates.append((neighbor, activity))
 
         if not candidates:
             return None
 
-        # Sort by activity (highest first)
-        candidates.sort(key=lambda x: x[1], reverse=True)
+        # Find maximum activity
+        max_activity = max(candidates, key=lambda x: x[1])[1]
+        tolerance = 1e-6  # Small tolerance for floating point comparison
 
-        # Apply priority template for ties
-        max_activity = candidates[0][1]
-        tolerance = 0.001  # Small tolerance for floating point
+        # Find all candidates with maximum activity (rank one class)
+        rank_one_candidates = [pos for pos, act in candidates
+                               if abs(act - max_activity) <= tolerance]
 
-        # Get all candidates with maximum activity
-        top_candidates = [pos for pos, act in candidates if abs(act - max_activity) <= tolerance]
+        # Apply priority template if more than one candidate in rank one class
+        if len(rank_one_candidates) > 1:
+            # Priority template: "up and down" as mentioned in paper
+            # Try UP first (-1, 0) - note: in grid coordinates, up is -y
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x and candidate.y == current.y - 1:  # UP
+                    return candidate
 
-        if len(top_candidates) > 1:
-            # Apply priority template: up, down, left, right, then diagonals
-            priority_directions = [(-1, 0), (1, 0), (0, -1), (0, 1),
-                                 (-1, -1), (-1, 1), (1, -1), (1, 1)]
+            # Try DOWN (1, 0)
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x and candidate.y == current.y + 1:  # DOWN
+                    return candidate
 
-            for dx, dy in priority_directions:
-                target = Position(current.x + dx, current.y + dy)
-                for candidate in top_candidates:
-                    if candidate.x == target.x and candidate.y == target.y:
+            # If no up-down direction available, try left-right
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x - 1 and candidate.y == current.y:  # LEFT
+                    return candidate
+
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x + 1 and candidate.y == current.y:  # RIGHT
+                    return candidate
+
+            # Finally try diagonals
+            diagonal_dirs = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+            for dx, dy in diagonal_dirs:
+                for candidate in rank_one_candidates:
+                    if candidate.x == current.x + dx and candidate.y == current.y + dy:
                         return candidate
 
-        return candidates[0][0]  # Return highest activity
+        # Return the candidate with highest activity
+        return max(candidates, key=lambda x: x[1])[0]
 
     def is_deadlock(self) -> bool:
-        """Check if robot is in deadlock situation according to paper"""
+        """Algorithm 2: Deadlock detection exactly as in paper"""
         neighbors = self.get_neighbors(self.position)
+        current_activity = self.neural_activity[self.position.y, self.position.x].item()
 
-        # Check if all neighbors are visited or obstacles
+        # Check conditions from paper:
+        # 1. All neighbors are visited or obstacles
+        # 2. Activities around current position are lower than current activity
         for neighbor in neighbors:
             state = self.grid_state[neighbor.y, neighbor.x]
+            neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
+
+            # If neighbor is unvisited, not deadlock
             if state == GridState.UNVISITED.value:
                 return False
 
-        return True  # All neighbors are visited or obstacles
+            # If neighbor is visited/obstacle but has higher activity, not deadlock
+            if state in [GridState.VISITED.value, GridState.OBSTACLE.value]:
+                if neighbor_activity >= current_activity:
+                    return False
+
+        return True  # All conditions satisfied - deadlock detected
 
     def update_backtrack_list(self):
-        """Algorithm 1: Update backtracking list exactly as in paper"""
+        """Algorithm 1: Updating backtracking List - exactly as in paper"""
         neighbors = self.get_neighbors(self.position)
-        unvisited_count = 0
-        all_visited_or_obstacle = True
+        unvisited_neighbors = 0
 
-        # Check neighbor states
+        # Count unvisited neighbors
         for neighbor in neighbors:
-            state = self.grid_state[neighbor.y, neighbor.x]
-            if state == GridState.UNVISITED.value:
-                unvisited_count += 1
-                all_visited_or_obstacle = False
-            elif state != GridState.OBSTACLE.value and state != GridState.VISITED.value:
-                all_visited_or_obstacle = False
-        # Algorithm 1 logic from paper
-        if unvisited_count > 0:
-            # Add current point to backtracking list if it has unvisited neighbors
+            if self.grid_state[neighbor.y, neighbor.x] == GridState.UNVISITED.value:
+                unvisited_neighbors += 1
+
+        # Algorithm 1 logic: if current position has unvisited neighbors, add to backtrack list
+        if unvisited_neighbors > 0:
             if self.position not in self.backtrack_list:
                 self.backtrack_list.append(self.position)
 
-        if all_visited_or_obstacle:
-            # Remove current point from backtracking list
-            if self.position in self.backtrack_list:
-                self.backtrack_list.remove(self.position)
+        # Remove positions from backtrack list that no longer have unvisited neighbors
+        positions_to_remove = []
+        for pos in self.backtrack_list:
+            pos_neighbors = self.get_neighbors(pos)
+            has_unvisited = False
+
+            for neighbor in pos_neighbors:
+                if self.grid_state[neighbor.y, neighbor.x] == GridState.UNVISITED.value:
+                    has_unvisited = True
+                    break
+
+            if not has_unvisited:
+                positions_to_remove.append(pos)
+
+        # Remove invalid positions
+        for pos in positions_to_remove:
+            self.backtrack_list.remove(pos)
 
     def select_best_backtrack_point(self) -> Optional[Position]:
         """Select the best backtrack point with accessible unvisited neighbors"""
@@ -309,34 +341,6 @@ class CCPPRobot:
 
         return []  # No path found
 
-    def escape_deadlock(self) -> bool:
-        """Algorithm 2: Deadlock detection and escaping"""
-        if not self.is_deadlock():
-            return True
-
-        self.deadlock_count += 1
-        self.grid_state[self.position.y, self.position.x] = GridState.DEADLOCK.value
-
-        # Select best backtrack point
-        backtrack_point = self.select_best_backtrack_point()
-        if not backtrack_point:
-            return False  # No more areas to explore
-
-        # Plan path to backtrack point
-        path = self.dynamic_a_star(self.position, backtrack_point)
-        if not path:
-            return False
-
-        # Move along the path
-        for pos in path[1:]:  # Skip current position
-            self.position = pos
-            self.path.append(pos)
-            if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
-                self.grid_state[pos.y, pos.x] = GridState.VISITED.value
-                self.external_input[pos.y, pos.x] = 0.0
-
-        return True
-
     def simulate_sensor_detection(self, dynamic_obstacles: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
         """Simulate sensor detection of dynamic obstacles"""
         detected = []
@@ -345,6 +349,23 @@ class CCPPRobot:
             if distance <= self.sensor_range:
                 detected.append((obs_x, obs_y))
         return detected
+
+    def select_best_backtrack_point(self) -> Optional[Position]:
+        """Select most recent valid backtrack point as in paper"""
+        if not self.backtrack_list:
+            return None
+
+        # Paper uses "newest point in the backtracking list as the goal"
+        # Check from most recent to oldest
+        for candidate in reversed(self.backtrack_list):
+            # Verify candidate still has unvisited neighbors
+            neighbors = self.get_neighbors(candidate)
+            has_unvisited = any(self.grid_state[n.y, n.x] == GridState.UNVISITED.value
+                                for n in neighbors)
+            if has_unvisited:
+                return candidate
+
+        return None
 
     def run_coverage(self, max_steps: int = 1000, dynamic_obstacles: List[Tuple[int, int]] = None) -> Dict:
         """Main coverage algorithm following paper logic"""
@@ -376,20 +397,20 @@ class CCPPRobot:
                 self.path.append(next_pos)
                 self.grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                 self.external_input[next_pos.y, next_pos.x] = 0.0
-            elif self.is_deadlock():
+                elif self.is_deadlock():
                 # Deadlock situation - use backtracking
-                deadlock_count += 1
-                print(f"Deadlock {deadlock_count} at {self.position.x},{self.position.y} (step {step})")
+                self.deadlock_count += 1
+                print(f"Deadlock {self.deadlock_count} at {self.position.x},{self.position.y} (step {step})")
 
                 backtrack_point = self.select_best_backtrack_point()
 
                 if backtrack_point is None:
-                    print("No valid backtrack points - coverage complete or stuck")
+                    print("No valid backtrack points - coverage complete")
                     break
 
                 print(f"Backtracking to {backtrack_point.x},{backtrack_point.y}")
 
-                # Plan path to backtrack point
+                # Plan path to backtrack point using Dynamic A*
                 path = self.dynamic_a_star(self.position, backtrack_point)
                 if path and len(path) > 1:
                     print(f"Backtrack path length: {len(path)}")
@@ -397,13 +418,12 @@ class CCPPRobot:
                     for pos in path[1:]:
                         self.position = pos
                         self.path.append(pos)
-                        # Don't mark backtrack path as visited unless it was unvisited
+                        # Mark backtrack path cells as visited if they were unvisited
                         if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                             self.grid_state[pos.y, pos.x] = GridState.VISITED.value
                             self.external_input[pos.y, pos.x] = 0.0
                 else:
                     print(f"Cannot reach backtrack point {backtrack_point.x},{backtrack_point.y}")
-                    # Remove unreachable backtrack point
                     if backtrack_point in self.backtrack_list:
                         self.backtrack_list.remove(backtrack_point)
             else:
