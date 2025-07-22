@@ -144,21 +144,12 @@ class CleanCCPPDemo:
             for trial in range(num_trials):
                 print(f"    Trial {trial + 1}/{num_trials}")
 
-                # Use fixed multi-robot implementation
-                try:
-                    from fixed_multi_robot_ccpp import MultiRobotCCPP
-                    multi_robot = MultiRobotCCPP(
-                        width=width, height=height,
-                        num_robots=num_robots, sensor_range=2
-                    )
-                except ImportError:
-                    print("    Using original implementation (may have issues)")
-                    from multi_robot_ccpp import MultiRobotCCPP
-                    multi_robot = MultiRobotCCPP(
-                        width=width, height=height,
-                        num_robots=num_robots, sensor_range=2
-                    )
-
+                # Use multi-robot implementation
+                from multi_robot_ccpp import MultiRobotCCPP
+                multi_robot = MultiRobotCCPP(
+                    width=width, height=height,
+                    num_robots=num_robots, sensor_range=2
+                )
                 multi_robot.add_shared_obstacles(env['obstacles'])
 
                 # Run coverage exactly as paper describes

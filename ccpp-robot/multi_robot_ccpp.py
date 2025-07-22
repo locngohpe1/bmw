@@ -92,39 +92,28 @@ class MultiRobotCCPP:
 
     def treat_other_robots_as_obstacles(self, current_robot_id: int):
         """Paper assumption: treat other robots as obstacles"""
-        # First, reset any previous robot obstacle markings
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.shared_grid_state[y, x] == GridState.OBSTACLE.value:
-                    # Check if this is a robot position (not permanent obstacle)
-                    is_robot_pos = False
-                    for robot_id, robot in enumerate(self.robots):
-                        if robot.position.x == x and robot.position.y == y:
-                            is_robot_pos = True
-                            break
-
-                    if is_robot_pos and self.shared_external_input[y, x] != -1000.0:
-                        # This was a temporary robot obstacle, reset it
-                        self.shared_grid_state[y, x] = GridState.VISITED.value
-                        self.shared_external_input[y, x] = 0.0
-
-        # Mark other robots as temporary obstacles
+        # Mark other robots as temporary obstacles for current robot's pathfinding
         for robot_id, robot in enumerate(self.robots):
             if robot_id != current_robot_id:
                 pos = robot.position
-                # Temporarily mark as obstacle for pathfinding
-                original_state = self.shared_grid_state[pos.y, pos.x].item()
-                if original_state != GridState.OBSTACLE.value:  # Don't override permanent obstacles
+                # Store original state before marking as obstacle
+                if hasattr(self, '_original_states'):
+                    self._original_states[pos] = self.shared_grid_state[pos.y, pos.x].item()
+                else:
+                    self._original_states = {pos: self.shared_grid_state[pos.y, pos.x].item()}
+
+                # Temporarily mark as obstacle only if not permanent obstacle
+                if self.shared_external_input[pos.y, pos.x] != -1000.0:
                     self.shared_grid_state[pos.y, pos.x] = GridState.OBSTACLE.value
 
     def restore_robot_positions(self, current_robot_id: int):
         """Restore robot positions after pathfinding"""
-        for robot_id, robot in enumerate(self.robots):
-            if robot_id != current_robot_id:
-                pos = robot.position
-                # Restore to visited state
-                if self.shared_external_input[pos.y, pos.x] != -1000.0:  # Not a permanent obstacle
-                    self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
+        if hasattr(self, '_original_states'):
+            for pos, original_state in self._original_states.items():
+                # Restore original state
+                self.shared_grid_state[pos.y, pos.x] = original_state
+            # Clear stored states
+            self._original_states = {}
 
     def market_based_bidding(self, deadlock_robot_id: int) -> Optional[Position]:
         """Algorithm 3: Market-based bidding process EXACTLY as in paper"""

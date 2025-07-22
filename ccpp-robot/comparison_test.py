@@ -89,17 +89,13 @@ class MultiRobotComparison:
 
     def test_fixed_multi_robot(self, env: Dict, num_robots: int = 4, num_trials: int = 3) -> Dict:
         """Test fixed multi-robot implementation"""
-        print(f"Testing FIXED Multi-Robot ({num_robots} robots)...")
-
-        # Import fixed implementation (assuming it's available)
-        from fixed_multi_robot_ccpp import MultiRobotCCPP as FixedMultiRobotCCPP
-
+        # Use the current multi-robot implementation
         results = {'coverage_rates': [], 'deadlocks': [], 'path_lengths': [], 'times': []}
         width, height = env['size']
 
         for trial in range(num_trials):
-            multi_robot = FixedMultiRobotCCPP(width=width, height=height,
-                                              num_robots=num_robots, sensor_range=2)
+            multi_robot = MultiRobotCCPP(width=width, height=height,
+                                         num_robots=num_robots, sensor_range=2)
             multi_robot.add_shared_obstacles(env['obstacles'])
 
             start_time = time.time()
