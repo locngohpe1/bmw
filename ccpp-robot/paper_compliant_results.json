@@ -1,0 +1,446 @@
+{
+  "metadata": {
+    "paper_title": "Sensor-based complete coverage path planning in dynamic environment for cleaning robot",
+    "authors": "Hong Liu, Jiayao Ma, Weibo Huang",
+    "institution": "Peking University",
+    "year": 2018,
+    "implementation_date": "2025-07-23",
+    "algorithms_implemented": [
+      "Algorithm 1: Updating backtracking List",
+      "Algorithm 2: Deadlock detection and escaping",
+      "Algorithm 3: Bidding process in multi-robot systems"
+    ],
+    "equations_implemented": [
+      "Equation (1): Neural activity update",
+      "Equation (3): Connection weight calculation"
+    ]
+  },
+  "experimental_results": {
+    "single_simple_scene": {
+      "coverage_rates": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "path_lengths": [
+        423,
+        423,
+        423,
+        423,
+        423
+      ],
+      "deadlock_counts": [
+        5,
+        5,
+        5,
+        5,
+        5
+      ],
+      "execution_times": [
+        68.41253209114075,
+        78.1546061038971,
+        72.34507942199707,
+        83.63335943222046,
+        70.38157320022583
+      ],
+      "steps": [
+        389,
+        389,
+        389,
+        389,
+        389
+      ],
+      "backtrack_usage": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "coverage_rates_mean": 1.0,
+      "coverage_rates_std": 0.0,
+      "path_lengths_mean": 423.0,
+      "path_lengths_std": 0.0,
+      "deadlock_counts_mean": 5.0,
+      "deadlock_counts_std": 0.0,
+      "execution_times_mean": 74.58543004989625,
+      "execution_times_std": 5.574949262004737,
+      "steps_mean": 389.0,
+      "steps_std": 0.0,
+      "backtrack_usage_mean": 3.0,
+      "backtrack_usage_std": 0.0
+    },
+    "single_complex_scene": {
+      "coverage_rates": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "path_lengths": [
+        632,
+        632,
+        632,
+        632,
+        632
+      ],
+      "deadlock_counts": [
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "execution_times": [
+        174.44603180885315,
+        181.34281277656555,
+        159.19065308570862,
+        153.9516544342041,
+        154.9024510383606
+      ],
+      "steps": [
+        590,
+        590,
+        590,
+        590,
+        590
+      ],
+      "backtrack_usage": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "coverage_rates_mean": 1.0,
+      "coverage_rates_std": 0.0,
+      "path_lengths_mean": 632.0,
+      "path_lengths_std": 0.0,
+      "deadlock_counts_mean": 7.0,
+      "deadlock_counts_std": 0.0,
+      "execution_times_mean": 164.7667206287384,
+      "execution_times_std": 11.079872710487178,
+      "steps_mean": 590.0,
+      "steps_std": 0.0,
+      "backtrack_usage_mean": 3.0,
+      "backtrack_usage_std": 0.0
+    },
+    "single_large_scene": {
+      "coverage_rates": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "path_lengths": [
+        958,
+        958,
+        958,
+        958,
+        958
+      ],
+      "deadlock_counts": [
+        9,
+        9,
+        9,
+        9,
+        9
+      ],
+      "execution_times": [
+        326.6745970249176,
+        325.12094283103943,
+        297.7629256248474,
+        305.63034081459045,
+        320.43204712867737
+      ],
+      "steps": [
+        874,
+        874,
+        874,
+        874,
+        874
+      ],
+      "backtrack_usage": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "coverage_rates_mean": 1.0,
+      "coverage_rates_std": 0.0,
+      "path_lengths_mean": 958.0,
+      "path_lengths_std": 0.0,
+      "deadlock_counts_mean": 9.0,
+      "deadlock_counts_std": 0.0,
+      "execution_times_mean": 315.12417068481443,
+      "execution_times_std": 11.428621876341788,
+      "steps_mean": 874.0,
+      "steps_std": 0.0,
+      "backtrack_usage_mean": 3.0,
+      "backtrack_usage_std": 0.0
+    },
+    "multi_simple_scene": {
+      "2_robots": {
+        "coverage_rates": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "total_path_lengths": [
+          413,
+          413,
+          413
+        ],
+        "total_deadlocks": [
+          5,
+          5,
+          5
+        ],
+        "execution_times": [
+          68.75595617294312,
+          68.45228552818298,
+          67.40684652328491
+        ],
+        "steps": [
+          213,
+          213,
+          213
+        ],
+        "market_bidding_calls": [
+          5,
+          5,
+          5
+        ],
+        "coverage_rates_mean": 1.0,
+        "coverage_rates_std": 0.0,
+        "total_path_lengths_mean": 413.0,
+        "total_path_lengths_std": 0.0,
+        "total_deadlocks_mean": 5.0,
+        "total_deadlocks_std": 0.0,
+        "execution_times_mean": 68.20502940813701,
+        "execution_times_std": 0.5778557509594494,
+        "steps_mean": 213.0,
+        "steps_std": 0.0,
+        "market_bidding_calls_mean": 5.0,
+        "market_bidding_calls_std": 0.0
+      },
+      "4_robots": {
+        "coverage_rates": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "total_path_lengths": [
+          403,
+          403,
+          403
+        ],
+        "total_deadlocks": [
+          16,
+          16,
+          16
+        ],
+        "execution_times": [
+          66.3758533000946,
+          66.43141078948975,
+          66.50543594360352
+        ],
+        "steps": [
+          112,
+          112,
+          112
+        ],
+        "market_bidding_calls": [
+          16,
+          16,
+          16
+        ],
+        "coverage_rates_mean": 1.0,
+        "coverage_rates_std": 0.0,
+        "total_path_lengths_mean": 403.0,
+        "total_path_lengths_std": 0.0,
+        "total_deadlocks_mean": 16.0,
+        "total_deadlocks_std": 0.0,
+        "execution_times_mean": 66.4375666777293,
+        "execution_times_std": 0.053080671904204395,
+        "steps_mean": 112.0,
+        "steps_std": 0.0,
+        "market_bidding_calls_mean": 16.0,
+        "market_bidding_calls_std": 0.0
+      }
+    },
+    "multi_complex_scene": {
+      "2_robots": {
+        "coverage_rates": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "total_path_lengths": [
+          634,
+          634,
+          634
+        ],
+        "total_deadlocks": [
+          19,
+          19,
+          19
+        ],
+        "execution_times": [
+          168.61005902290344,
+          170.07519268989563,
+          174.7073941230774
+        ],
+        "steps": [
+          364,
+          364,
+          364
+        ],
+        "market_bidding_calls": [
+          19,
+          19,
+          19
+        ],
+        "coverage_rates_mean": 1.0,
+        "coverage_rates_std": 0.0,
+        "total_path_lengths_mean": 634.0,
+        "total_path_lengths_std": 0.0,
+        "total_deadlocks_mean": 19.0,
+        "total_deadlocks_std": 0.0,
+        "execution_times_mean": 171.13088194529215,
+        "execution_times_std": 2.5987476065627035,
+        "steps_mean": 364.0,
+        "steps_std": 0.0,
+        "market_bidding_calls_mean": 19.0,
+        "market_bidding_calls_std": 0.0
+      },
+      "4_robots": {
+        "coverage_rates": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "total_path_lengths": [
+          619,
+          619,
+          619
+        ],
+        "total_deadlocks": [
+          6,
+          6,
+          6
+        ],
+        "execution_times": [
+          176.5987503528595,
+          174.6324110031128,
+          173.9746973514557
+        ],
+        "steps": [
+          188,
+          188,
+          188
+        ],
+        "market_bidding_calls": [
+          6,
+          6,
+          6
+        ],
+        "coverage_rates_mean": 1.0,
+        "coverage_rates_std": 0.0,
+        "total_path_lengths_mean": 619.0,
+        "total_path_lengths_std": 0.0,
+        "total_deadlocks_mean": 6.0,
+        "total_deadlocks_std": 0.0,
+        "execution_times_mean": 175.06861956914267,
+        "execution_times_std": 1.11478607016547,
+        "steps_mean": 188.0,
+        "steps_std": 0.0,
+        "market_bidding_calls_mean": 6.0,
+        "market_bidding_calls_std": 0.0
+      }
+    },
+    "backtracking_simple_scene": {
+      "with_backtracking": {
+        "coverage_rates": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "deadlocks": [
+          3,
+          3,
+          3
+        ],
+        "times": [
+          59.85408878326416,
+          57.808793783187866,
+          57.89114737510681
+        ]
+      },
+      "without_backtracking": {
+        "coverage_rates": [
+          0.4194373401534527,
+          0.4194373401534527,
+          0.4194373401534527
+        ],
+        "deadlocks": [
+          1,
+          1,
+          1
+        ],
+        "times": [
+          24.917196035385132,
+          24.22209668159485,
+          23.833618879318237
+        ]
+      },
+      "coverage_rates_improvement": 138.41463414634148,
+      "deadlocks_improvement": 2.0,
+      "times_improvement": -140.5742433750778
+    },
+    "backtracking_complex_scene": {
+      "with_backtracking": {
+        "coverage_rates": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "deadlocks": [
+          9,
+          9,
+          9
+        ],
+        "times": [
+          134.6604449748993,
+          142.52608633041382,
+          143.4101939201355
+        ]
+      },
+      "without_backtracking": {
+        "coverage_rates": [
+          0.3372681281618887,
+          0.3372681281618887,
+          0.3372681281618887
+        ],
+        "deadlocks": [
+          1,
+          1,
+          1
+        ],
+        "times": [
+          44.18087863922119,
+          46.713783979415894,
+          47.62924242019653
+        ]
+      },
+      "coverage_rates_improvement": 196.49999999999997,
+      "deadlocks_improvement": 8.0,
+      "times_improvement": -203.62754003183713
+    }
+  }
+}
