@@ -5,10 +5,8 @@ import time
 from typing import List, Tuple, Dict
 import json
 
-# Import our paper-compliant implementations
 from ccpp_robot_main import CCPPRobot, GridState, Position
-
-# from fixed_multi_robot_ccpp import MultiRobotCCPP  # Use fixed version
+from multi_robot_ccpp import MultiRobotCCPP
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
