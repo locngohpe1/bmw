@@ -117,36 +117,35 @@ class MultiRobotCCPP:
         if not deadlock_robot.backtrack_list:
             return None
 
-        # Test each candidate point starting from most recent (as in paper)
+        # Test each candidate point p starting from most recent (as in paper)
         for candidate_point in reversed(deadlock_robot.backtrack_list):
-
-            # Compute Euclidean distances (tender prices) for all robots
+            # Every robot computes its Euclidean distance to p as tender price
             tender_prices = {}
             for i, robot in enumerate(self.robots):
                 distance = np.sqrt((robot.position.x - candidate_point.x) ** 2 +
-                                   (robot.position.y - candidate_point.y) ** 2)
+                                 (robot.position.y - candidate_point.y) ** 2)
                 tender_prices[i] = distance
 
-            # Find minimum tender price
+            # Find minimum tender price among all robots
             min_price = min(tender_prices.values())
             deadlock_price = tender_prices[deadlock_robot_id]
 
-            # Check two conditions from paper:
-            # (i) close to the deadlock robot - robot wins bid if has minimum price
-            # (ii) far away from other robots - ensure no conflict
-            if deadlock_price == min_price:
-                # Additional check: candidate should be far from other robots
+            # Algorithm 3 conditions from paper:
+            # If tender price of bidder Rdl is lower than any other robots, Rdl wins
+            if deadlock_price <= min_price:
+                # Additional check: p should be away from other robots
+                # so it will not be covered by others in short time
                 conflict_free = True
                 for i, robot in enumerate(self.robots):
-                    if i != deadlock_robot_id:
-                        if tender_prices[i] < self.communication_range:  # Too close to other robot
-                            conflict_free = False
-                            break
+                    if i != deadlock_robot_id and tender_prices[i] < 3.0:  # Too close
+                        conflict_free = False
+                        break
 
-                if conflict_free or len([p for p in tender_prices.values() if p == min_price]) == 1:
+                if conflict_free:
                     return candidate_point
 
-        # If no point satisfies all conditions, return most recent point
+        # If all points in BTlist considered and none satisfies condition,
+        # choose most recent point as stated in paper
         return deadlock_robot.backtrack_list[-1] if deadlock_robot.backtrack_list else None
 
     def avoid_robot_collision(self, robot_id: int, next_pos: Position) -> bool:

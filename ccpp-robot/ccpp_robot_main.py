@@ -109,13 +109,14 @@ class CCPPRobot:
 
     def calculate_connection_weight(self, pos1: Position, pos2: Position) -> float:
         """Calculate connection weight - Equation (3) from paper: f(a) = m/a"""
-        # Use Euclidean distance as in paper, not Chebyshev
+        # Use Euclidean distance as specified in paper
         distance = np.sqrt((pos1.x - pos2.x) ** 2 + (pos1.y - pos2.y) ** 2)
 
-        # Equation (3): f(a) = m/a if 0 < a ≤ r0, 0 if a > r0
+        # Equation (3) from paper: f(a) = m/a if 0 < a ≤ r0, 0 if a > r0
         if 0 < distance <= self.r0:
             return self.m / distance
-        return 0.0
+        else:
+            return 0.0
 
     def update_neural_activity(self):
         """Update neural activities using shunting short-memory model - Equation (1) from paper"""
@@ -142,14 +143,17 @@ class CCPPRobot:
                         neighbor_excitation += weight * neighbor_activity
 
                 # Equation (1): dxi/dt = -Axi + (B-xi)[Ii+ + Σvij*xj+] - (D+xi)[Ii-]
-                # Split external input into positive and negative parts
+                # Split external input into positive and negative parts exactly as in paper
                 Ii_positive = max(0, external_input)  # [Ii]+
                 Ii_negative = max(0, -external_input)  # [Ii]-
 
-                # Calculate derivative
+                # Calculate derivative following Equation (1) from paper
+                # Excitatory term: (B - xi)[Ii+ + Σvij[xj]+]
                 excitatory_term = (self.B - current_activity) * (Ii_positive + neighbor_excitation)
+                # Inhibitory term: (D + xi)[Ii]-
                 inhibitory_term = (self.D + current_activity) * Ii_negative
 
+                # Complete Equation (1): dxi/dt = -Axi + excitatory_term - inhibitory_term
                 dxi_dt = -self.A * current_activity + excitatory_term - inhibitory_term
 
                 # Update with Euler method
@@ -183,31 +187,26 @@ class CCPPRobot:
 
         # Apply priority template if more than one candidate in rank one class
         if len(rank_one_candidates) > 1:
-            # Priority template: "up and down" as mentioned in paper
-            # Try UP first (-1, 0) - note: in grid coordinates, up is -y
-            for candidate in rank_one_candidates:
-                if candidate.x == current.x and candidate.y == current.y - 1:  # UP
-                    return candidate
+            # Priority template from paper Section 3.1.2: "up and down" regularity
+            # This makes the path grow like repeated mowing pattern
+            current = self.position
 
-            # Try DOWN (1, 0)
-            for candidate in rank_one_candidates:
-                if candidate.x == current.x and candidate.y == current.y + 1:  # DOWN
-                    return candidate
+            # Priority order: UP, DOWN, LEFT, RIGHT, then diagonals
+            priority_directions = [
+                (0, -1),  # UP (in grid coordinates, -y is up)
+                (0, 1),  # DOWN
+                (-1, 0),  # LEFT
+                (1, 0),  # RIGHT
+                (-1, -1),  # UP-LEFT diagonal
+                (1, -1),  # UP-RIGHT diagonal
+                (-1, 1),  # DOWN-LEFT diagonal
+                (1, 1)  # DOWN-RIGHT diagonal
+            ]
 
-            # If no up-down direction available, try left-right
-            for candidate in rank_one_candidates:
-                if candidate.x == current.x - 1 and candidate.y == current.y:  # LEFT
-                    return candidate
-
-            for candidate in rank_one_candidates:
-                if candidate.x == current.x + 1 and candidate.y == current.y:  # RIGHT
-                    return candidate
-
-            # Finally try diagonals
-            diagonal_dirs = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-            for dx, dy in diagonal_dirs:
+            for dx, dy in priority_directions:
+                target_pos = Position(current.x + dx, current.y + dy)
                 for candidate in rank_one_candidates:
-                    if candidate.x == current.x + dx and candidate.y == current.y + dy:
+                    if candidate.x == target_pos.x and candidate.y == target_pos.y:
                         return candidate
 
         # Return the candidate with highest activity
@@ -218,23 +217,27 @@ class CCPPRobot:
         neighbors = self.get_neighbors(self.position)
         current_activity = self.neural_activity[self.position.y, self.position.x].item()
 
-        # Check conditions from paper:
-        # 1. All neighbors are visited or obstacles
-        # 2. Activities around current position are lower than current activity
+        # Algorithm 2 conditions from paper:
+        # 1. Check if all neighbors are visited or obstacles
+        # 2. Check if activities around current position are lower than current activity
+        all_neighbors_unavailable = True
+
         for neighbor in neighbors:
             state = self.grid_state[neighbor.y, neighbor.x]
             neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
 
             # If neighbor is unvisited, not deadlock
             if state == GridState.UNVISITED.value:
-                return False
+                all_neighbors_unavailable = False
+                break
 
-            # If neighbor is visited/obstacle but has higher activity, not deadlock
+            # If neighbor is visited/obstacle but has higher or equal activity, not deadlock
             if state in [GridState.VISITED.value, GridState.OBSTACLE.value]:
                 if neighbor_activity >= current_activity:
-                    return False
+                    all_neighbors_unavailable = False
+                    break
 
-        return True  # All conditions satisfied - deadlock detected
+        return all_neighbors_unavailable
 
     def update_backtrack_list(self):
         """Algorithm 1: Updating backtracking List - exactly as in paper"""
@@ -350,6 +353,24 @@ class CCPPRobot:
                 detected.append((obs_x, obs_y))
         return detected
 
+    def escape_deadlock(self) -> bool:
+        """Escape from deadlock using backtracking mechanism"""
+        backtrack_point = self.select_best_backtrack_point()
+        if backtrack_point is None:
+            return False
+
+        path = self.dynamic_a_star(self.position, backtrack_point)
+        if path and len(path) > 1:
+            # Move along backtrack path
+            for pos in path[1:]:
+                self.position = pos
+                self.path.append(pos)
+                if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
+                    self.grid_state[pos.y, pos.x] = GridState.VISITED.value
+                    self.external_input[pos.y, pos.x] = 0.0
+            return True
+        return False
+
     def select_best_backtrack_point(self) -> Optional[Position]:
         """Select most recent valid backtrack point as in paper"""
         if not self.backtrack_list:
@@ -371,7 +392,6 @@ class CCPPRobot:
         """Main coverage algorithm following paper logic"""
         if dynamic_obstacles is None:
             dynamic_obstacles = []
-
         step = 0
         deadlock_count = 0
         coverage_history = []
@@ -397,33 +417,50 @@ class CCPPRobot:
                 self.path.append(next_pos)
                 self.grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                 self.external_input[next_pos.y, next_pos.x] = 0.0
-                elif self.is_deadlock():
+
+            elif self.is_deadlock():
+
                 # Deadlock situation - use backtracking
                 self.deadlock_count += 1
+
                 print(f"Deadlock {self.deadlock_count} at {self.position.x},{self.position.y} (step {step})")
 
                 backtrack_point = self.select_best_backtrack_point()
 
                 if backtrack_point is None:
                     print("No valid backtrack points - coverage complete")
+
                     break
 
                 print(f"Backtracking to {backtrack_point.x},{backtrack_point.y}")
 
                 # Plan path to backtrack point using Dynamic A*
+
                 path = self.dynamic_a_star(self.position, backtrack_point)
+
                 if path and len(path) > 1:
+
                     print(f"Backtrack path length: {len(path)}")
+
                     # Move along path
+
                     for pos in path[1:]:
+
                         self.position = pos
+
                         self.path.append(pos)
+
                         # Mark backtrack path cells as visited if they were unvisited
+
                         if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                             self.grid_state[pos.y, pos.x] = GridState.VISITED.value
+
                             self.external_input[pos.y, pos.x] = 0.0
+
                 else:
+
                     print(f"Cannot reach backtrack point {backtrack_point.x},{backtrack_point.y}")
+
                     if backtrack_point in self.backtrack_list:
                         self.backtrack_list.remove(backtrack_point)
             else:
@@ -452,10 +489,9 @@ class CCPPRobot:
             'steps': step,
             'coverage_rate': final_coverage_rate,
             'path_length': len(self.path),
-            'deadlock_count': deadlock_count,
+            'deadlock_count': deadlock_count,  # Use local variable, not self.deadlock_count
             'coverage_history': coverage_history
         }
-
     def visualize(self, save_path: str = None):
         """Visualize the current state and path"""
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))

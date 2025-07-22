@@ -203,10 +203,10 @@ class CCPPDemo:
             robot_without_bt = CCPPRobot(width=width, height=height, sensor_range=2)
             robot_without_bt.add_obstacles(env['obstacles'])
 
-            # Disable backtracking by clearing backtrack list
-            original_escape_method = robot_without_bt.escape_deadlock
-            robot_without_bt.escape_deadlock = lambda: False  # Always fail to escape
-
+            # Disable backtracking by preventing backtrack point selection
+            def disabled_select_backtrack():
+                return None
+            robot_without_bt.select_best_backtrack_point = disabled_select_backtrack
             start_time = time.time()
             results_without_bt = robot_without_bt.run_coverage(max_steps=2000)
             time_without_bt = time.time() - start_time
