@@ -133,15 +133,17 @@ class MultiRobotCCPP:
             # Algorithm 3 conditions from paper:
             # If tender price of bidder Rdl is lower than any other robots, Rdl wins
             if deadlock_price <= min_price:
-                # Additional check: p should be away from other robots
-                # so it will not be covered by others in short time
-                conflict_free = True
+                # Additional check from paper: p should be away from other robots
+                # "so it will not be covered by the others in a short time"
+                far_from_others = True
                 for i, robot in enumerate(self.robots):
-                    if i != deadlock_robot_id and tender_prices[i] < 3.0:  # Too close
-                        conflict_free = False
-                        break
+                    if i != deadlock_robot_id:
+                        # Check if other robots are too close to candidate point
+                        if tender_prices[i] < 5.0:  # Distance threshold
+                            far_from_others = False
+                            break
 
-                if conflict_free:
+                if far_from_others:
                     return candidate_point
 
         # If all points in BTlist considered and none satisfies condition,

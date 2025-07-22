@@ -58,7 +58,6 @@ class CCPPRobot:
         self.position = Position(0, 0)
         self.backtrack_list = []
         self.path = [self.position]
-        self.deadlock_count = 0  # Initialize deadlock counter
 
         # 8-directional movement as in paper
         self.directions = [
@@ -115,8 +114,7 @@ class CCPPRobot:
         # Equation (3) from paper: f(a) = m/a if 0 < a ≤ r0, 0 if a > r0
         if 0 < distance <= self.r0:
             return self.m / distance
-        else:
-            return 0.0
+        return 0.0
 
     def update_neural_activity(self):
         """Update neural activities using shunting short-memory model - Equation (1) from paper"""
@@ -138,7 +136,7 @@ class CCPPRobot:
                 for neighbor in neighbors:
                     neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
                     weight = self.calculate_connection_weight(current_pos, neighbor)
-                    # Only positive activities contribute ([xj]+)
+                    # Only positive activities contribute ([xj]+) as in Equation (1)
                     if neighbor_activity > 0:
                         neighbor_excitation += weight * neighbor_activity
 
@@ -220,24 +218,26 @@ class CCPPRobot:
         # Algorithm 2 conditions from paper:
         # 1. Check if all neighbors are visited or obstacles
         # 2. Check if activities around current position are lower than current activity
-        all_neighbors_unavailable = True
+        neighbors = self.get_neighbors(self.position)
+        current_activity = self.neural_activity[self.position.y, self.position.x].item()
 
+        # Check Algorithm 2 conditions:
+        # 1. All neighbors are visited or obstacles
+        # 2. Activities around current position are lower than current activity
         for neighbor in neighbors:
             state = self.grid_state[neighbor.y, neighbor.x]
             neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
 
             # If neighbor is unvisited, not deadlock
             if state == GridState.UNVISITED.value:
-                all_neighbors_unavailable = False
-                break
+                return False
 
-            # If neighbor is visited/obstacle but has higher or equal activity, not deadlock
+            # If neighbor activity >= current activity, not deadlock
             if state in [GridState.VISITED.value, GridState.OBSTACLE.value]:
                 if neighbor_activity >= current_activity:
-                    all_neighbors_unavailable = False
-                    break
+                    return False
 
-        return all_neighbors_unavailable
+        return True  # All conditions satisfied - deadlock detected
 
     def update_backtrack_list(self):
         """Algorithm 1: Updating backtracking List - exactly as in paper"""
@@ -271,38 +271,6 @@ class CCPPRobot:
         # Remove invalid positions
         for pos in positions_to_remove:
             self.backtrack_list.remove(pos)
-
-    def select_best_backtrack_point(self) -> Optional[Position]:
-        """Select the best backtrack point with accessible unvisited neighbors"""
-        if not self.backtrack_list:
-            return None
-
-        # Remove invalid backtrack points and find best one
-        valid_backtrack = []
-        for pos in self.backtrack_list:
-            neighbors = self.get_neighbors(pos)
-            unvisited_count = 0
-
-            for neighbor in neighbors:
-                if self.grid_state[neighbor.y, neighbor.x] == GridState.UNVISITED.value:
-                    unvisited_count += 1
-
-            if unvisited_count > 0:
-                # Check if we can actually reach this backtrack point
-                path = self.dynamic_a_star(self.position, pos)
-                if path:
-                    valid_backtrack.append((pos, unvisited_count, len(path)))
-
-        if not valid_backtrack:
-            self.backtrack_list.clear()
-            return None
-
-        # Update backtrack list to only valid points
-        self.backtrack_list = [pos for pos, _, _ in valid_backtrack]
-
-        # Select best backtrack point: most unvisited neighbors, shortest path as tiebreaker
-        best_pos = max(valid_backtrack, key=lambda x: (x[1], -x[2]))[0]
-        return best_pos
 
     def dynamic_a_star(self, start: Position, goal: Position) -> List[Position]:
         """Dynamic A* pathfinding algorithm allowing movement through visited cells"""
@@ -353,24 +321,6 @@ class CCPPRobot:
                 detected.append((obs_x, obs_y))
         return detected
 
-    def escape_deadlock(self) -> bool:
-        """Escape from deadlock using backtracking mechanism"""
-        backtrack_point = self.select_best_backtrack_point()
-        if backtrack_point is None:
-            return False
-
-        path = self.dynamic_a_star(self.position, backtrack_point)
-        if path and len(path) > 1:
-            # Move along backtrack path
-            for pos in path[1:]:
-                self.position = pos
-                self.path.append(pos)
-                if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
-                    self.grid_state[pos.y, pos.x] = GridState.VISITED.value
-                    self.external_input[pos.y, pos.x] = 0.0
-            return True
-        return False
-
     def select_best_backtrack_point(self) -> Optional[Position]:
         """Select most recent valid backtrack point as in paper"""
         if not self.backtrack_list:
@@ -418,12 +368,14 @@ class CCPPRobot:
                 self.grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                 self.external_input[next_pos.y, next_pos.x] = 0.0
 
+
             elif self.is_deadlock():
 
                 # Deadlock situation - use backtracking
-                self.deadlock_count += 1
 
-                print(f"Deadlock {self.deadlock_count} at {self.position.x},{self.position.y} (step {step})")
+                deadlock_count += 1
+
+                print(f"Deadlock {deadlock_count} at {self.position.x},{self.position.y} (step {step})")
 
                 backtrack_point = self.select_best_backtrack_point()
 
