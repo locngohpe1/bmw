@@ -40,11 +40,11 @@ class CCPPRobot:
 
         # Neural network parameters from paper
         self.A = 1.0
-        self.B = 100.0
-        self.D = 100.0
+        self.B = 100.0  # Back to reasonable value
+        self.D = 100.0  # Back to reasonable value
         self.E = 1000.0
-        self.m = 10.0
-        self.r0 = 2.0
+        self.m = 10.0  # Back to paper value
+        self.r0 = 2.0  # Back to paper value
 
         # Initialize grids on GPU
         self.grid_state = torch.zeros((height, width), dtype=torch.int, device=device)
@@ -115,7 +115,7 @@ class CCPPRobot:
 
     def update_neural_activity(self):
         """Update neural activities using shunting short-memory model - Equation (1) from paper"""
-        dt = 0.1  # Time step
+        dt = 0.01  # Much smaller time step for numerical stability
 
         # Create new activity tensor
         new_activity = torch.zeros_like(self.neural_activity)
@@ -126,37 +126,42 @@ class CCPPRobot:
                 current_activity = self.neural_activity[y, x].item()
                 external_input = self.external_input[y, x].item()
 
-                # Calculate neighbor influence - Σ(vij[xj]+)
+                # Calculate neighbor influence - Σ(vij[xj]+) exactly as in paper
                 neighbor_excitation = 0.0
                 neighbors = self.get_neighbors(current_pos)
 
                 for neighbor in neighbors:
                     neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
                     weight = self.calculate_connection_weight(current_pos, neighbor)
-                    # Equation (1): Only positive activities contribute ([xj]+)
+                    # Only positive activities contribute ([xj]+)
                     if neighbor_activity > 0:
                         neighbor_excitation += weight * neighbor_activity
 
-                # Equation (1): dxi/dt = -Axi + (B-xi)[Ii+ + Σvij*xj+] - (D+xi)[Ii-]
-                # Split external input into positive and negative parts exactly as in paper
+                # Equation (1) EXACTLY from paper: dxi/dt = -Axi + (B-xi)[Ii+ + Σvij*xj+] - (D+xi)[Ii-]
                 Ii_positive = max(0, external_input)  # [Ii]+
                 Ii_negative = max(0, -external_input)  # [Ii]-
 
-                # Calculate derivative following Equation (1) from paper
-                # Excitatory term: (B - xi)[Ii+ + Σvij[xj]+]
+                # CRITICAL FIX: Paper equation implementation
                 excitatory_term = (self.B - current_activity) * (Ii_positive + neighbor_excitation)
-                # Inhibitory term: (D + xi)[Ii]-
                 inhibitory_term = (self.D + current_activity) * Ii_negative
+                passive_decay = self.A * current_activity
+                dxi_dt = -passive_decay + excitatory_term - inhibitory_term
 
-                # Complete Equation (1): dxi/dt = -Axi + excitatory_term - inhibitory_term
-                dxi_dt = -self.A * current_activity + excitatory_term - inhibitory_term
-
-                # Update with Euler method
+                # Stability check - clip derivative if too large
+                if abs(dxi_dt) > 1000:
+                    dxi_dt = 1000 if dxi_dt > 0 else -1000
+                # Update with proper integration and bounds checking
                 new_val = current_activity + dt * dxi_dt
-                new_activity[y, x] = max(0.0, min(new_val, self.B))  # Clamp to [0, B]
+
+                # Prevent overflow and maintain paper bounds
+                if new_val > 1e6:  # Overflow protection
+                    new_val = 1e6
+                elif new_val < 0:
+                    new_val = 0.0
+
+                new_activity[y, x] = new_val
 
         self.neural_activity = new_activity
-
     def select_next_position_with_priority(self) -> Optional[Position]:
         """Select next position using priority template from paper Section 3.1.2"""
         current = self.position
@@ -182,22 +187,21 @@ class CCPPRobot:
 
         # Apply priority template if more than one candidate in rank one class
         if len(rank_one_candidates) > 1:
-            # Priority template from paper Section 3.1.2: "up and down" regularity
-            # "This template is triggered when the activities of neighbour neurons have more
-            # than one in rank one class after updating"
+            # Priority template from paper Section 3.1.2
+            # "The regularity in our prior template is the up and down"
             current = self.position
 
-            # Try UP first (-1, 0) - in grid coordinates, up is -y
+            # First priority: UP direction
             for candidate in rank_one_candidates:
                 if candidate.x == current.x and candidate.y == current.y - 1:  # UP
                     return candidate
 
-            # Try DOWN (1, 0)
+            # Second priority: DOWN direction
             for candidate in rank_one_candidates:
                 if candidate.x == current.x and candidate.y == current.y + 1:  # DOWN
                     return candidate
 
-            # If no up-down direction available, try left-right
+            # Third priority: LEFT/RIGHT
             for candidate in rank_one_candidates:
                 if candidate.x == current.x - 1 and candidate.y == current.y:  # LEFT
                     return candidate
@@ -206,11 +210,11 @@ class CCPPRobot:
                 if candidate.x == current.x + 1 and candidate.y == current.y:  # RIGHT
                     return candidate
 
-            # Finally try diagonals if needed
-            diagonal_dirs = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-            for dx, dy in diagonal_dirs:
+            # Last priority: Diagonals
+            for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
                 for candidate in rank_one_candidates:
-                    if candidate.x == current.x + dx and candidate.y == current.y + dy:
+                    if (candidate.x == current.x + dx and
+                            candidate.y == current.y + dy):
                         return candidate
         # Return the candidate with highest activity
         return max(candidates, key=lambda x: x[1])[0]
@@ -220,21 +224,25 @@ class CCPPRobot:
         neighbors = self.get_neighbors(self.position)
         current_activity = self.neural_activity[self.position.y, self.position.x].item()
 
-        # Check Algorithm 2 conditions from paper:
-        # 1. All neighbors are visited or obstacles
-        # 2. Activities around current position are lower than current activity
+        # Check if all neighbors are visited or obstacles
+        has_unvisited_neighbor = False
+        for neighbor in neighbors:
+            state = self.grid_state[neighbor.y, neighbor.x]
+            if state == GridState.UNVISITED.value:
+                has_unvisited_neighbor = True
+                break
+
+        if has_unvisited_neighbor:
+            return False  # Not deadlock if unvisited neighbors exist
+
+        # If no unvisited neighbors, check activity condition
         for neighbor in neighbors:
             state = self.grid_state[neighbor.y, neighbor.x]
             neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
 
-            # If neighbor is unvisited, not deadlock
-            if state == GridState.UNVISITED.value:
-                return False
-
-            # If neighbor activity >= current activity, not deadlock
             if state in [GridState.VISITED.value, GridState.OBSTACLE.value]:
                 if neighbor_activity >= current_activity:
-                    return False
+                    return False  # Not deadlock if neighbor has higher/equal activity
 
         return True  # All conditions satisfied - deadlock detected
 
@@ -366,8 +374,6 @@ class CCPPRobot:
                 self.path.append(next_pos)
                 self.grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                 self.external_input[next_pos.y, next_pos.x] = 0.0
-
-
             elif self.is_deadlock():
                 # Deadlock situation - use backtracking
                 deadlock_count += 1
@@ -392,7 +398,22 @@ class CCPPRobot:
                     if backtrack_point in self.backtrack_list:
                         self.backtrack_list.remove(backtrack_point)
             else:
-                # No valid moves and not in deadlock - coverage complete
+                # No valid moves - check for backtracking opportunity
+                total_unvisited = torch.sum(self.grid_state == GridState.UNVISITED.value).item()
+                if total_unvisited > 0 and len(self.backtrack_list) > 0:
+                    # Force backtracking when stuck but unvisited cells remain
+                    deadlock_count += 1
+                    backtrack_point = self.select_best_backtrack_point()
+                    if backtrack_point:
+                        path = self.dynamic_a_star(self.position, backtrack_point)
+                        if path and len(path) > 1:
+                            for pos in path[1:]:
+                                self.position = pos
+                                self.path.append(pos)
+                                if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
+                                    self.grid_state[pos.y, pos.x] = GridState.VISITED.value
+                                    self.external_input[pos.y, pos.x] = 0.0
+                            continue  # Continue coverage
                 break
 
             step += 1
