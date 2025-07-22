@@ -12,13 +12,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class CleanCCPPDemo:
-    """
-    Clean CCPP Demo - 100% Paper Compliant
-    Implements ONLY what's described in:
-    "Sensor-based complete coverage path planning in dynamic environment for cleaning robot"
-    Peking University, 2018
-    """
-
     def __init__(self):
         self.results_history = []
 
@@ -485,11 +478,6 @@ class CleanCCPPDemo:
 # Main execution
 if __name__ == "__main__":
     print("Starting Paper-Compliant CCPP Evaluation...")
-    print("Paper: 'Sensor-based complete coverage path planning in dynamic environment for cleaning robot'")
-    print("Authors: Hong Liu, Jiayao Ma, Weibo Huang (Peking University, 2018)")
-    print(f"Device: {device}")
-    print("=" * 80)
-
     # Create demo instance
     demo = CleanCCPPDemo()
 
