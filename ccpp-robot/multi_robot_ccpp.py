@@ -1,14 +1,11 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from collections import deque
 import heapq
 import time
 from typing import List, Tuple, Optional, Dict
 from dataclasses import dataclass
 from enum import Enum
-import copy
 
 # Import from main robot implementation
 from ccpp_robot_main import CCPPRobot, GridState, Position
@@ -133,17 +130,18 @@ class MultiRobotCCPP:
             # Algorithm 3 conditions from paper:
             # If tender price of bidder Rdl is lower than any other robots, Rdl wins
             if deadlock_price <= min_price:
-                # Additional check from paper: p should be away from other robots
-                # "so it will not be covered by the others in a short time"
-                far_from_others = True
+                # Algorithm 3 condition from paper:
+                # "Moreover, Gbt should be away from the other robots so that it will not be covered by the others in a short time"
+                suitable_point = True
                 for i, robot in enumerate(self.robots):
                     if i != deadlock_robot_id:
                         # Check if other robots are too close to candidate point
-                        if tender_prices[i] < 5.0:  # Distance threshold
-                            far_from_others = False
+                        # Use communication_range as threshold for "short time" coverage
+                        if tender_prices[i] <= self.communication_range:
+                            suitable_point = False
                             break
 
-                if far_from_others:
+                if suitable_point:
                     return candidate_point
 
         # If all points in BTlist considered and none satisfies condition,
@@ -207,10 +205,10 @@ class MultiRobotCCPP:
         top_candidates = [pos for pos, act in candidates if abs(act - max_activity) <= tolerance]
 
         if len(top_candidates) > 1:
-            # Apply priority template
+            # Apply same priority template as single robot
             current = robot.position
-            priority_directions = [(-1, 0), (1, 0), (0, -1), (0, 1),
-                                 (-1, -1), (-1, 1), (1, -1), (1, 1)]
+            # UP, DOWN, LEFT, RIGHT priority as in paper
+            priority_directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
 
             for dx, dy in priority_directions:
                 target = Position(current.x + dx, current.y + dy)

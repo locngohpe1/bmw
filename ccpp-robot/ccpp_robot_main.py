@@ -1,9 +1,6 @@
 import torch
-import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from collections import deque
 import heapq
 import time
 from typing import List, Tuple, Optional, Dict
@@ -137,6 +134,7 @@ class CCPPRobot:
                     neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
                     weight = self.calculate_connection_weight(current_pos, neighbor)
                     # Only positive activities contribute ([xj]+) as in Equation (1)
+                    # Equation (1): Only positive activities contribute ([xj]+)
                     if neighbor_activity > 0:
                         neighbor_excitation += weight * neighbor_activity
 
@@ -186,27 +184,35 @@ class CCPPRobot:
         # Apply priority template if more than one candidate in rank one class
         if len(rank_one_candidates) > 1:
             # Priority template from paper Section 3.1.2: "up and down" regularity
-            # This makes the path grow like repeated mowing pattern
+            # "This template is triggered when the activities of neighbour neurons have more
+            # than one in rank one class after updating"
             current = self.position
 
-            # Priority order: UP, DOWN, LEFT, RIGHT, then diagonals
-            priority_directions = [
-                (0, -1),  # UP (in grid coordinates, -y is up)
-                (0, 1),  # DOWN
-                (-1, 0),  # LEFT
-                (1, 0),  # RIGHT
-                (-1, -1),  # UP-LEFT diagonal
-                (1, -1),  # UP-RIGHT diagonal
-                (-1, 1),  # DOWN-LEFT diagonal
-                (1, 1)  # DOWN-RIGHT diagonal
-            ]
+            # Try UP first (-1, 0) - in grid coordinates, up is -y
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x and candidate.y == current.y - 1:  # UP
+                    return candidate
 
-            for dx, dy in priority_directions:
-                target_pos = Position(current.x + dx, current.y + dy)
+            # Try DOWN (1, 0)
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x and candidate.y == current.y + 1:  # DOWN
+                    return candidate
+
+            # If no up-down direction available, try left-right
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x - 1 and candidate.y == current.y:  # LEFT
+                    return candidate
+
+            for candidate in rank_one_candidates:
+                if candidate.x == current.x + 1 and candidate.y == current.y:  # RIGHT
+                    return candidate
+
+            # Finally try diagonals if needed
+            diagonal_dirs = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+            for dx, dy in diagonal_dirs:
                 for candidate in rank_one_candidates:
-                    if candidate.x == target_pos.x and candidate.y == target_pos.y:
+                    if candidate.x == current.x + dx and candidate.y == current.y + dy:
                         return candidate
-
         # Return the candidate with highest activity
         return max(candidates, key=lambda x: x[1])[0]
 
@@ -215,13 +221,7 @@ class CCPPRobot:
         neighbors = self.get_neighbors(self.position)
         current_activity = self.neural_activity[self.position.y, self.position.x].item()
 
-        # Algorithm 2 conditions from paper:
-        # 1. Check if all neighbors are visited or obstacles
-        # 2. Check if activities around current position are lower than current activity
-        neighbors = self.get_neighbors(self.position)
-        current_activity = self.neural_activity[self.position.y, self.position.x].item()
-
-        # Check Algorithm 2 conditions:
+        # Check Algorithm 2 conditions from paper:
         # 1. All neighbors are visited or obstacles
         # 2. Activities around current position are lower than current activity
         for neighbor in neighbors:
@@ -370,49 +370,26 @@ class CCPPRobot:
 
 
             elif self.is_deadlock():
-
                 # Deadlock situation - use backtracking
-
                 deadlock_count += 1
-
-                print(f"Deadlock {deadlock_count} at {self.position.x},{self.position.y} (step {step})")
-
                 backtrack_point = self.select_best_backtrack_point()
 
                 if backtrack_point is None:
-                    print("No valid backtrack points - coverage complete")
-
                     break
 
-                print(f"Backtracking to {backtrack_point.x},{backtrack_point.y}")
-
                 # Plan path to backtrack point using Dynamic A*
-
                 path = self.dynamic_a_star(self.position, backtrack_point)
-
                 if path and len(path) > 1:
-
-                    print(f"Backtrack path length: {len(path)}")
-
                     # Move along path
-
                     for pos in path[1:]:
-
                         self.position = pos
-
                         self.path.append(pos)
-
                         # Mark backtrack path cells as visited if they were unvisited
-
                         if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                             self.grid_state[pos.y, pos.x] = GridState.VISITED.value
-
                             self.external_input[pos.y, pos.x] = 0.0
-
                 else:
-
-                    print(f"Cannot reach backtrack point {backtrack_point.x},{backtrack_point.y}")
-
+                    # Cannot reach backtrack point, remove it
                     if backtrack_point in self.backtrack_list:
                         self.backtrack_list.remove(backtrack_point)
             else:
@@ -562,7 +539,7 @@ if __name__ == "__main__":
         plt.show()
 
     # Debug: Print some neural activities
-    print(f"\nNeural Activity Debug:")
-    print(f"Max activity: {torch.max(robot.neural_activity).item():.6f}")
-    print(f"Min activity: {torch.min(robot.neural_activity).item():.6f}")
-    print(f"Mean activity: {torch.mean(robot.neural_activity).item():.6f}")
+    # Basic neural activity info for verification
+    print(f"\nNeural Activity Summary:")
+    print(f"Max activity: {torch.max(robot.neural_activity).item():.3f}")
+    print(f"Min activity: {torch.min(robot.neural_activity).item():.3f}")
