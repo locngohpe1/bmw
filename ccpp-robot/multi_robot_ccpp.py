@@ -18,7 +18,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class MultiRobotCCPP:
     def __init__(self, width: int, height: int, num_robots: int, sensor_range: int = 2):
-        sself.width = width
+        self.width = width
         self.height = height
         self.num_robots = num_robots
         self.sensor_range = sensor_range
