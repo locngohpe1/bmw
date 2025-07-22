@@ -133,7 +133,6 @@ class CCPPRobot:
                 for neighbor in neighbors:
                     neighbor_activity = self.neural_activity[neighbor.y, neighbor.x].item()
                     weight = self.calculate_connection_weight(current_pos, neighbor)
-                    # Only positive activities contribute ([xj]+) as in Equation (1)
                     # Equation (1): Only positive activities contribute ([xj]+)
                     if neighbor_activity > 0:
                         neighbor_excitation += weight * neighbor_activity
@@ -524,7 +523,6 @@ if __name__ == "__main__":
     unvisited_neighbors = [n for n in current_neighbors
                            if robot.grid_state[n.y, n.x] == GridState.UNVISITED.value]
     print(f"Unvisited neighbors from current position: {len(unvisited_neighbors)}")
-
     # Visualize results
     robot.visualize()
 
@@ -538,8 +536,7 @@ if __name__ == "__main__":
         plt.grid(True)
         plt.show()
 
-    # Debug: Print some neural activities
-    # Basic neural activity info for verification
+    # Neural Activity Summary
     print(f"\nNeural Activity Summary:")
     print(f"Max activity: {torch.max(robot.neural_activity).item():.3f}")
     print(f"Min activity: {torch.min(robot.neural_activity).item():.3f}")

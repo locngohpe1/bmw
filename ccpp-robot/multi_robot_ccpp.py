@@ -238,12 +238,8 @@ class MultiRobotCCPP:
                 # 1. Update robot's individual neural activity
                 robot.update_neural_activity()
 
-                # 2. Communicate with nearby robots and treat them as obstacles
-                nearby_robots = self.get_nearby_robots(robot_id)
-                for other_id in nearby_robots:
-                    other_robot = self.robots[other_id]
-                    # Nearby robots are considered in collision avoidance
-                    pass
+                # 2. Get nearby robots for collision avoidance
+                self.get_nearby_robots(robot_id)
 
                 # 3. Update backtrack list
                 robot.update_backtrack_list()
