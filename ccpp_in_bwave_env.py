@@ -12,7 +12,6 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 # Import Project D algorithm (KHÔNG SỬA GỐC)
 from project_D.ccpp_robot_main import CCPPRobot, GridState, Position
 
-
 class CCPPInBWaveEnvironment:
     def __init__(self):
         """CCPP Robot hoạt động trong BWave Environment"""
@@ -70,9 +69,8 @@ class CCPPInBWaveEnvironment:
             energy_cost = distance_moved  # 1 unit per distance for coverage
         else:
             energy_cost = 0.5 * distance_moved  # 0.5 unit for advance/retreat
-
         self.current_energy -= energy_cost
-
+        
         if self.current_energy <= 0:
             self.current_energy = 0
             return False  # Out of energy
@@ -145,10 +143,13 @@ class CCPPInBWaveEnvironment:
         static_obstacles = self.convert_bwave_to_ccpp_map(environment, COL_COUNT, ROW_COUNT)
         self.ccpp_robot.add_obstacles(static_obstacles)
 
-        # Set robot starting position (convert BWave (row,col) to CCPP (x,y))
-        start_x, start_y = battery_pos[1], battery_pos[0]
-        self.ccpp_robot.position = Position(start_x, start_y)
-        self.ccpp_robot.path = [self.ccpp_robot.position]
+        # CRITICAL FIX: Mark current position as VISITED immediately
+        self.ccpp_robot.grid_state[start_y, start_x] = GridState.VISITED.value
+        self.ccpp_robot.external_input[start_y, start_x] = 0.0
+        self.ui.map[start_y][start_x] = 'e'
+
+        print(f"🤖 CCPP Robot initialized at ({start_x}, {start_y}) - marked as VISITED")
+        print(f"🧠 Initial neural activity: {self.ccpp_robot.neural_activity[start_y, start_x].item():.2f}")
 
         # Set energy system
         self.energy_capacity = energy_capacity
@@ -160,7 +161,7 @@ class CCPPInBWaveEnvironment:
         print("\n🚀 Starting CCPP Coverage Algorithm...")
         print("Press SPACE to pause, LEFT/RIGHT arrows to change speed, ESC to quit")
 
-        FPS = 10
+        FPS = 10000
         clock = pg.time.Clock()
         run = True
         pause = False
@@ -195,7 +196,7 @@ class CCPPInBWaveEnvironment:
                         FPS = max(1, FPS // 2)
                         print(f"🐌 Speed: {FPS} FPS")
                     elif event.key == pg.K_RIGHT:
-                        FPS = min(60, FPS * 2)
+                        FPS = min(600000, FPS * 2)
                         print(f"🏃 Speed: {FPS} FPS")
                     elif event.key == pg.K_ESCAPE:
                         run = False
@@ -204,8 +205,11 @@ class CCPPInBWaveEnvironment:
                 clock.tick(FPS)
                 continue
 
-            # 5. CCPP Algorithm Step (Project D)
-            if not pause:
+            # 5. CCPP Algorithm Step (Project D) - Chỉ chạy mỗi 4 frames
+            algorithm_step_counter = getattr(self, 'algorithm_step_counter', 0)
+            algorithm_step_counter += 1
+
+            if algorithm_step_counter % 4 == 0:  # Chỉ chạy algorithm mỗi 4 frames (10 FPS cho algorithm)
                 # Update neural activities
                 self.ccpp_robot.update_neural_activity()
 
@@ -244,20 +248,45 @@ class CCPPInBWaveEnvironment:
                 elif self.ccpp_robot.is_deadlock():
                     # Deadlock situation (Algorithm 2)
                     self.deadlock_count += 1
-                    print(f"🔴 Deadlock #{self.deadlock_count} detected!")
+                    print(
+                        f"🔴 Deadlock #{self.deadlock_count} detected at {self.ccpp_robot.position.x}, {self.ccpp_robot.position.y}")
 
                     backtrack_point = self.ccpp_robot.select_best_backtrack_point()
                     if backtrack_point:
-                        # Use dynamic A* for backtracking
+                        print(f"🔙 Backtracking to {backtrack_point.x}, {backtrack_point.y}")
+                        # Use dynamic A* for backtracking - ALLOW movement through visited cells
                         path = self.ccpp_robot.dynamic_a_star(self.ccpp_robot.position, backtrack_point)
                         if path and len(path) > 1:
-                            for pos in path[1:]:
+                            print(f"📍 Backtrack path length: {len(path) - 1} steps")
+                            for i, pos in enumerate(path[1:]):  # Skip current position
+                                # Move to backtrack path (can go through visited cells)
+                                distance = math.sqrt((pos.x - self.ccpp_robot.position.x) ** 2 +
+                                                     (pos.y - self.ccpp_robot.position.y) ** 2)
+
                                 self.ccpp_robot.position = pos
                                 self.ccpp_robot.path.append(pos)
+
+                                # Update energy for backtrack movement (0.5x cost)
+                                self.update_energy_system(distance, is_coverage=False)
+                                self.total_travel_length += distance
+
+                                # DON'T mark visited cells as explored again, just move through them
+                                # Only mark unvisited cells as visited during backtracking
                                 if self.ccpp_robot.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                                     self.ccpp_robot.grid_state[pos.y, pos.x] = GridState.VISITED.value
                                     self.ccpp_robot.external_input[pos.y, pos.x] = 0.0
                                     self.ui.map[pos.y][pos.x] = 'e'
+                                    self.coverage_length += distance
+
+                                print(f"  ↳ Backtrack step {i + 1}: ({pos.x}, {pos.y})")
+                        else:
+                            # Cannot reach backtrack point, remove it from list
+                            print(f"❌ Cannot reach backtrack point {backtrack_point.x}, {backtrack_point.y}")
+                            if backtrack_point in self.ccpp_robot.backtrack_list:
+                                self.ccpp_robot.backtrack_list.remove(backtrack_point)
+                                print(f"🗑️  Removed unreachable backtrack point")
+                    else:
+                        print("⚠️ No valid backtrack points available")
                 else:
                     # Check if coverage complete
                     total_unvisited = torch.sum(self.ccpp_robot.grid_state == GridState.UNVISITED.value).item()
@@ -265,7 +294,78 @@ class CCPPInBWaveEnvironment:
                         print("✅ Coverage Complete!")
                         break
 
+                    # CRITICAL FIX: If stuck but still have unvisited cells
+                    print(f"⚠️ Robot stuck at ({self.ccpp_robot.position.x}, {self.ccpp_robot.position.y})")
+                    print(f"📊 Unvisited cells remaining: {total_unvisited}")
+                    print(f"🎯 Backtrack list size: {len(self.ccpp_robot.backtrack_list)}")
+
+                    # Debug neighbors
+                    neighbors = self.ccpp_robot.get_neighbors(self.ccpp_robot.position)
+                    print("🔍 Neighbor analysis:")
+                    for i, neighbor in enumerate(neighbors):
+                        state = self.ccpp_robot.grid_state[neighbor.y, neighbor.x].item()
+                        activity = self.ccpp_robot.neural_activity[neighbor.y, neighbor.x].item()
+                        state_name = {0: "UNVISITED", 1: "VISITED", 2: "OBSTACLE", 3: "DEADLOCK"}
+                        print(
+                            f"  Neighbor {i}: ({neighbor.x},{neighbor.y}) - {state_name.get(state, 'UNKNOWN')} - Activity: {activity:.2f}")
+
+                    # Force backtracking if stuck with remaining work
+                    if total_unvisited > 0 and self.ccpp_robot.backtrack_list:
+                        print("🚨 FORCE BACKTRACKING - Robot stuck but work remains")
+                        self.deadlock_count += 1
+
+                        backtrack_point = self.ccpp_robot.select_best_backtrack_point()
+                        if backtrack_point:
+                            print(f"🔙 Force backtrack to {backtrack_point.x}, {backtrack_point.y}")
+                            path = self.ccpp_robot.dynamic_a_star(self.ccpp_robot.position, backtrack_point)
+                            if path and len(path) > 1:
+                                # Execute backtrack path immediately
+                                for pos in path[1:]:
+                                    distance = math.sqrt((pos.x - self.ccpp_robot.position.x) ** 2 +
+                                                         (pos.y - self.ccpp_robot.position.y) ** 2)
+
+                                    self.ccpp_robot.position = pos
+                                    self.ccpp_robot.path.append(pos)
+                                    self.update_energy_system(distance, is_coverage=False)
+                                    self.total_travel_length += distance
+
+                                    if self.ccpp_robot.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
+                                        self.ccpp_robot.grid_state[pos.y, pos.x] = GridState.VISITED.value
+                                        self.ccpp_robot.external_input[pos.y, pos.x] = 0.0
+                                        self.ui.map[pos.y][pos.x] = 'e'
+                                        self.coverage_length += distance
+
+                                print(
+                                    f"✅ Force backtrack completed to ({self.ccpp_robot.position.x}, {self.ccpp_robot.position.y})")
+                                continue  # Continue the algorithm loop
+
+                        # If still can't backtrack, try to find ANY unvisited cell
+                        print("🆘 EMERGENCY: Finding any unvisited cell")
+                        for y in range(ROW_COUNT):
+                            for x in range(COL_COUNT):
+                                if self.ccpp_robot.grid_state[y, x] == GridState.UNVISITED.value:
+                                    emergency_target = Position(x, y)
+                                    emergency_path = self.ccpp_robot.dynamic_a_star(self.ccpp_robot.position,
+                                                                                    emergency_target)
+                                    if emergency_path and len(emergency_path) > 1:
+                                        print(f"🚑 Emergency jump to unvisited cell ({x}, {y})")
+                                        self.ccpp_robot.position = emergency_target
+                                        self.ccpp_robot.path.append(emergency_target)
+                                        # Add emergency target to backtrack list
+                                        if emergency_target not in self.ccpp_robot.backtrack_list:
+                                            self.ccpp_robot.backtrack_list.append(emergency_target)
+                                        break
+                            else:
+                                continue
+                            break
+                        else:
+                            print("❌ No reachable unvisited cells found - terminating")
+                            break
+
                 step += 1
+
+            # Store counter for next iteration
+            self.algorithm_step_counter = algorithm_step_counter
 
             # 6. BWave Visualization (Project A)
             self.ui.draw()
