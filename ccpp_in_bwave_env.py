@@ -64,48 +64,18 @@ class CCPPInBWaveEnvironment:
         return positions
 
     def clean_stale_dynamic_marks(self):
-        """✅ Clean up old dynamic obstacle marks that are no longer occupied"""
+        """✅ Simple dynamic obstacle tracking - Paper compliant"""
         if not hasattr(self, 'ccpp_robot') or self.dynamic_obstacles is None:
-            return
+            return set()
 
-        # Get current actual dynamic obstacle positions
+        # Simple approach: Get current dynamic obstacle positions
         current_dynamic_positions = set()
         for obstacle in self.dynamic_obstacles.obstacles:
             center_pos = obstacle['pos']  # (row, col)
-            size = obstacle.get('size', 1.0)
-
-            # Add all cells occupied by this obstacle
-            if isinstance(size, tuple):
-                height, width = size
-                radius_h = height // 2
-                radius_w = width // 2
-                for dr in range(-radius_h, radius_h + 1):
-                    for dc in range(-radius_w, radius_w + 1):
-                        r, c = center_pos[0] + dr, center_pos[1] + dc
-                        if (0 <= r < self.ccpp_robot.height and 0 <= c < self.ccpp_robot.width):
-                            current_dynamic_positions.add((c, r))  # Convert to (x, y)
-            else:
-                radius = int(size // 2)
-                for dr in range(-radius, radius + 1):
-                    for dc in range(-radius, radius + 1):
-                        r, c = center_pos[0] + dr, center_pos[1] + dc
-                        if (0 <= r < self.ccpp_robot.height and 0 <= c < self.ccpp_robot.width):
-                            current_dynamic_positions.add((c, r))  # Convert to (x, y)
-
-        # Clean up stale marks in CCPP grid
-        for y in range(self.ccpp_robot.height):
-            for x in range(self.ccpp_robot.width):
-                # If cell is marked as dynamic but not actually occupied
-                if (self.ui.map[y][x] == 'd' and
-                        (x, y) not in current_dynamic_positions and
-                        self.ccpp_robot.grid_state[y, x] != GridState.VISITED.value):
-
-                    # Clean up the stale mark
-                    self.ui.map[y][x] = 0  # Mark as free
-                    # Reset to unvisited if it wasn't visited
-                    if self.ccpp_robot.grid_state[y, x] != GridState.VISITED.value:
-                        self.ccpp_robot.grid_state[y, x] = GridState.UNVISITED.value
-                        self.ccpp_robot.external_input[y, x] = self.ccpp_robot.E
+            # Simple single-cell marking as in papers
+            x, y = center_pos[1], center_pos[0]  # Convert to (x, y)
+            if (0 <= x < self.ccpp_robot.width and 0 <= y < self.ccpp_robot.height):
+                current_dynamic_positions.add((x, y))
 
         return current_dynamic_positions
 
@@ -123,10 +93,10 @@ class CCPPInBWaveEnvironment:
         return True
 
     def check_energy_for_return(self, current_pos, battery_pos):
-        """Check if enough energy to return to charging station"""
+        """Check if enough energy to return to charging station - Paper compliant"""
         return_distance = math.sqrt((current_pos.x - battery_pos[1]) ** 2 +
                                     (current_pos.y - battery_pos[0]) ** 2)
-        return_energy_needed = 0.5 * return_distance  # Half energy for return
+        return_energy_needed = 0.5 * return_distance  # Half energy for return as in paper
         return self.current_energy >= return_energy_needed
 
     def charge_robot(self):
@@ -232,11 +202,16 @@ class CCPPInBWaveEnvironment:
         run = True
         pause = False
         step = 0
-        max_steps = 2000
+        max_steps = float('inf')  # Remove artificial limit - run until coverage complete
 
         self.execute_time = time.time()
 
         while run and step < max_steps:
+            # Check coverage completion early - Paper compliant termination
+            total_unvisited = torch.sum(self.ccpp_robot.grid_state == GridState.UNVISITED.value).item()
+            if total_unvisited == 0:
+                print("✅ Coverage Complete - All accessible cells visited!")
+                break
             current_time = time.time()
             delta_time = clock.get_time() / 1000.0
 
@@ -309,17 +284,14 @@ class CCPPInBWaveEnvironment:
             neural_update_counter = getattr(self, 'neural_update_counter', 0)
             neural_update_counter += 1
 
-            # ✅ OPTIMIZATION: Run algorithm every 2 frames, neural updates every 8 frames
-            if algorithm_step_counter % 2 == 0:  # Algorithm at 20 FPS instead of 10 FPS
+            # ✅ PAPER COMPLIANT: Run algorithm every step as in paper
+            if True:  # Run every frame as specified in paper
 
-                # ✅ NEURAL UPDATES: Only every 8 frames to reduce GPU load
-                if neural_update_counter % 8 == 0:
-                    self.ccpp_robot.update_neural_activity()
-                    neural_update_counter = 0
+                # ✅ NEURAL UPDATES: Every step as in paper equation (1)
+                self.ccpp_robot.update_neural_activity()
 
-                # Update backtrack list (Algorithm 1) - less frequent
-                if algorithm_step_counter % 4 == 0:
-                    self.ccpp_robot.update_backtrack_list()
+                # Update backtracking list (Algorithm 1) - every step as in paper
+                self.ccpp_robot.update_backtrack_list()
 
                 # ✅ DYNAMIC OBSTACLES: Sync with BWave manager
                 if dynamic_positions:
@@ -491,29 +463,9 @@ class CCPPInBWaveEnvironment:
                                 print(
                                     f"✅ Force backtrack completed to ({self.ccpp_robot.position.x}, {self.ccpp_robot.position.y})")
                                 continue  # Continue the algorithm loop
-
-                        # If still can't backtrack, try to find ANY unvisited cell
-                        print("🆘 EMERGENCY: Finding any unvisited cell")
-                        for y in range(ROW_COUNT):
-                            for x in range(COL_COUNT):
-                                if self.ccpp_robot.grid_state[y, x] == GridState.UNVISITED.value:
-                                    emergency_target = Position(x, y)
-                                    emergency_path = self.ccpp_robot.dynamic_a_star(self.ccpp_robot.position,
-                                                                                    emergency_target)
-                                    if emergency_path and len(emergency_path) > 1:
-                                        print(f"🚑 Emergency jump to unvisited cell ({x}, {y})")
-                                        self.ccpp_robot.position = emergency_target
-                                        self.ccpp_robot.path.append(emergency_target)
-                                        # Add emergency target to backtrack list
-                                        if emergency_target not in self.ccpp_robot.backtrack_list:
-                                            self.ccpp_robot.backtrack_list.append(emergency_target)
-                                        break
-                            else:
-                                continue
-                            break
-                        else:
-                            print("❌ No reachable unvisited cells found - terminating")
-                            break
+                        # Paper compliant: Terminate if no backtrack points available
+                        print("❌ No reachable unvisited cells found - terminating")
+                        break
 
                 step += 1
 
