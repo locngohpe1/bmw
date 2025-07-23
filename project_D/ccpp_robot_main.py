@@ -301,8 +301,14 @@ class CCPPRobot:
             for neighbor in self.get_neighbors(current):
                 # Only skip obstacles, allow movement through visited cells for backtracking
                 state = self.grid_state[neighbor.y, neighbor.x]
+                # ✅ CRITICAL FIX: Allow movement through visited cells for backtracking
                 if state == GridState.OBSTACLE.value:
-                    continue
+                    continue  # Only block obstacles, allow visited cells
+
+                # ✅ DYNAMIC OBSTACLE CHECK: Skip cells with dynamic obstacles
+                if hasattr(self, 'dynamic_obstacle_positions'):
+                    if (neighbor.x, neighbor.y) in self.dynamic_obstacle_positions:
+                        continue
 
                 tentative_g = g_score[current] + 1
 
