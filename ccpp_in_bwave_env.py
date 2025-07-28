@@ -315,8 +315,6 @@ class CCPPInBWaveEnvironment:
                         return_path = self.ccpp_robot.dynamic_a_star(self.ccpp_robot.position, charging_pos)
 
                         if return_path and len(return_path) > 1:
-                            print(f"🔋 Planned return path: {len(return_path) - 1} steps")
-
                             # Execute return path
                             for i, pos in enumerate(return_path[1:]):  # Skip current position
                                 distance = math.sqrt((pos.x - self.ccpp_robot.position.x) ** 2 +
@@ -328,10 +326,6 @@ class CCPPInBWaveEnvironment:
                                 # Update energy for return movement (0.5x cost)
                                 self.update_energy_system(distance, is_coverage=False)
                                 self.total_travel_length += distance
-
-                                print(
-                                    f"  ↳ Return step {i + 1}: ({pos.x}, {pos.y}) - Energy: {self.current_energy:.1f}")
-
                             # Charge robot
                             self.charge_robot()
                             print(f"🔋 Robot charged at ({charging_pos.x}, {charging_pos.y})")
@@ -359,17 +353,6 @@ class CCPPInBWaveEnvironment:
                 elif self.ccpp_robot.is_deadlock():
                     # Deadlock situation (Algorithm 2)
                     self.deadlock_count += 1
-                    print(
-                        f"🔴 Deadlock #{self.deadlock_count} detected at {self.ccpp_robot.position.x}, {self.ccpp_robot.position.y}")
-                    # ✅ DEBUG INFO: Show neighbor states
-                    neighbors = self.ccpp_robot.get_neighbors(self.ccpp_robot.position)
-                    print("🔍 Neighbor states:")
-                    for i, neighbor in enumerate(neighbors):
-                        state = self.ccpp_robot.grid_state[neighbor.y, neighbor.x].item()
-                        activity = self.ccpp_robot.neural_activity[neighbor.y, neighbor.x].item()
-                        state_names = {0: "UNVISITED", 1: "VISITED", 2: "OBSTACLE", 3: "DEADLOCK"}
-                        print(
-                            f"  {i}: ({neighbor.x},{neighbor.y}) = {state_names.get(state, 'UNKNOWN')} (act: {activity:.2f})")
                     backtrack_point = self.ccpp_robot.select_best_backtrack_point()
                     if backtrack_point:
                         print(f"🔙 Backtracking to {backtrack_point.x}, {backtrack_point.y}")
@@ -418,22 +401,7 @@ class CCPPInBWaveEnvironment:
                     if total_unvisited == 0:
                         print("✅ Coverage Complete!")
                         break
-
-                    # CRITICAL FIX: If stuck but still have unvisited cells
-                    print(f"⚠️ Robot stuck at ({self.ccpp_robot.position.x}, {self.ccpp_robot.position.y})")
-                    print(f"📊 Unvisited cells remaining: {total_unvisited}")
-                    print(f"🎯 Backtrack list size: {len(self.ccpp_robot.backtrack_list)}")
-
-                    # Debug neighbors
-                    neighbors = self.ccpp_robot.get_neighbors(self.ccpp_robot.position)
-                    print("🔍 Neighbor analysis:")
-                    for i, neighbor in enumerate(neighbors):
-                        state = self.ccpp_robot.grid_state[neighbor.y, neighbor.x].item()
-                        activity = self.ccpp_robot.neural_activity[neighbor.y, neighbor.x].item()
-                        state_name = {0: "UNVISITED", 1: "VISITED", 2: "OBSTACLE", 3: "DEADLOCK"}
-                        print(
-                            f"  Neighbor {i}: ({neighbor.x},{neighbor.y}) - {state_name.get(state, 'UNKNOWN')} - Activity: {activity:.2f}")
-
+                    # Robot stuck but unvisited cells remain
                     # Force backtracking if stuck with remaining work
                     if total_unvisited > 0 and self.ccpp_robot.backtrack_list:
                         print("🚨 FORCE BACKTRACKING - Robot stuck but work remains")
@@ -441,27 +409,37 @@ class CCPPInBWaveEnvironment:
 
                         backtrack_point = self.ccpp_robot.select_best_backtrack_point()
                         if backtrack_point:
-                            print(f"🔙 Force backtrack to {backtrack_point.x}, {backtrack_point.y}")
                             path = self.ccpp_robot.dynamic_a_star(self.ccpp_robot.position, backtrack_point)
                             if path and len(path) > 1:
-                                # Execute backtrack path immediately
-                                for pos in path[1:]:
+                                # Execute backtrack path step by step with proper movement
+                                for i, pos in enumerate(path[1:]):  # Skip current position
+                                    # Check energy before each step
+                                    if not self.check_energy_for_return(pos, battery_pos):
+                                        break
+
+                                    # Calculate distance for this step
                                     distance = math.sqrt((pos.x - self.ccpp_robot.position.x) ** 2 +
                                                          (pos.y - self.ccpp_robot.position.y) ** 2)
 
+                                    # Move robot step by step
                                     self.ccpp_robot.position = pos
                                     self.ccpp_robot.path.append(pos)
+
+                                    # Update energy for backtrack movement (0.5x cost)
                                     self.update_energy_system(distance, is_coverage=False)
                                     self.total_travel_length += distance
 
+                                    # Only mark truly unvisited cells
                                     if self.ccpp_robot.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                                         self.ccpp_robot.grid_state[pos.y, pos.x] = GridState.VISITED.value
                                         self.ccpp_robot.external_input[pos.y, pos.x] = 0.0
                                         self.ui.map[pos.y][pos.x] = 'e'
                                         self.coverage_length += distance
 
-                                print(
-                                    f"✅ Force backtrack completed to ({self.ccpp_robot.position.x}, {self.ccpp_robot.position.y})")
+                                    # Update UI visualization for each step
+                                    robot_pos_bwave = (pos.y, pos.x)
+                                    self.ui.update_vehicle_pos(robot_pos_bwave)
+                                    print("Backing to the backtrack point")
                                 continue  # Continue the algorithm loop
                         # Paper compliant: Terminate if no backtrack points available
                         print("❌ No reachable unvisited cells found - terminating")
@@ -559,7 +537,7 @@ class CCPPInBWaveEnvironment:
             'execution_time': self.execute_time,
             'total_steps': step
         }
-
+'''
     def _find_emergency_target(self):
         """Find any reachable unvisited cell for emergency recovery"""
         # Search in expanding radius from current position
@@ -584,6 +562,7 @@ class CCPPInBWaveEnvironment:
                             return emergency_target
 
         return None
+    
     def check_actual_dynamic_collision(self, target_pos):
         """✅ Check collision only with ACTUAL dynamic obstacles, not stale marks"""
         if not self.dynamic_obstacles or not self.dynamic_obstacles.obstacles:
@@ -628,6 +607,7 @@ class CCPPInBWaveEnvironment:
             return False
 
         return False
+        '''
 
 def main():
     parser = argparse.ArgumentParser(description='CCPP Algorithm in BWave Environment')
