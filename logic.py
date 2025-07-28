@@ -128,7 +128,6 @@ class Logic:
                 if x < 0 or x >= len(weight_map): continue
                 if y < 0 or y >= len(weight_map[0]): continue
                 if weight_map[x, y] == -1: continue  # static obstacle
-                if weight_map[x, y] == -2: continue  # ✅ THÊM: dynamic obstacle blocked
 
                 # ✅ CHECK DYNAMIC OBSTACLES trong escape path
                 if hasattr(self, 'grid_map') and self.grid_map:
