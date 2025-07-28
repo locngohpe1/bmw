@@ -600,6 +600,7 @@ class Robot:
             elif class_name == 'static':
                 self.map[target_pos] = 'o'  # Update map to static
                 self.classified_obstacles[target_pos] = ('static', confidence)
+                self.logic.weight_map[target_pos] = -1  # ← THÊM dòng này
                 print(f"🚫 GoogLeNet detected STATIC obstacle - blocking movement")
                 return False  # Static obstacle - block movement, no waiting
         else:
