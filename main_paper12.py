@@ -692,11 +692,13 @@ def main():
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
-
     # Tính tổng số free cells (S_free) trong environment
     global total_free_cells
     total_free_cells = np.sum(ENVIRONMENT == 0)  # Đếm số cells = 0 (free space)
     print(f"Total free cells in environment: {total_free_cells}")
+
+    # Khởi tạo trình quản lý vật cản động với manual obstacles từ ui
+    dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=0, speed_factor=args.speed)
 
     # Khởi tạo các vật cản manual từ grid_map only if
     if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
