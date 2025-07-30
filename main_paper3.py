@@ -15,6 +15,7 @@ from project_D.ccpp_robot_main import CCPPRobot, GridState, Position
 class CCPPInBWaveEnvironment:
     def __init__(self):
         """CCPP Robot hoạt động trong BWave Environment"""
+        self.robot_speed = 1.0
         self.ui = None
         self.dynamic_obstacles = None
         self.ccpp_robot = None
@@ -211,6 +212,8 @@ class CCPPInBWaveEnvironment:
         max_steps = float('inf')  # Remove artificial limit - run until coverage complete
 
         self.execute_time = time.time()
+        self.movement_timer = 0
+        self.ROBOT_MOVE_INTERVAL = 1.0 / self.robot_speed  # 1.0 second per cell
 
         while run and step < max_steps:
             # Check coverage completion early - Paper compliant termination
@@ -220,6 +223,7 @@ class CCPPInBWaveEnvironment:
                 break
             current_time = time.time()
             delta_time = clock.get_time() / 1000.0
+            self.movement_timer += delta_time
 
             # Update dynamic obstacles (Project A)
             if self.dynamic_obstacles:
@@ -291,7 +295,7 @@ class CCPPInBWaveEnvironment:
             neural_update_counter += 1
 
             # ✅ PAPER COMPLIANT: Run algorithm every step as in paper
-            if True:  # Run every frame as specified in paper
+            if self.movement_timer >= self.ROBOT_MOVE_INTERVAL:
 
                 # ✅ NEURAL UPDATES: Every step as in paper equation (1)
                 self.ccpp_robot.update_neural_activity()
@@ -461,7 +465,7 @@ class CCPPInBWaveEnvironment:
                         # Paper compliant: Terminate if no backtrack points available
                         print("❌ No reachable unvisited cells found - terminating")
                         break
-
+                self.movement_timer = 0
                 step += 1
 
             # Store counter for next iteration
@@ -583,9 +587,7 @@ def main():
                         help='Path to map file')
     parser.add_argument('--energy', type=float, default=1000,
                         help='Robot energy capacity')
-    parser.add_argument('--speed', type=float, default=0.1,
-                        help='Dynamic obstacles speed factor')
-
+    parser.add_argument('--speed', type=float, default=0.5, help='Dynamic obstacles speed factor')
     args = parser.parse_args()
 
     print("🚀 Starting CCPP in BWave Environment...")
