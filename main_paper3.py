@@ -24,7 +24,7 @@ class CCPPInBWaveEnvironment:
         # Metrics tracking - BWave compliant
         self.total_travel_length = 0.0
         self.coverage_length = 0
-        self.return_charge_count = 0
+        self.return_charge_count = 1
         self.deadlock_count = 0
         self.extreme_deadlock_count = 0
         self.execute_time = 0
@@ -105,8 +105,8 @@ class CCPPInBWaveEnvironment:
     def charge_robot(self):
         """Charge robot to full capacity"""
         self.current_energy = self.energy_capacity
-        self.return_charge_count += 1  # Chỉ tăng khi thực sự charge
-        print(f"🔋 Robot charged! Charge count: {self.return_charge_count}")
+        self.return_charge_count += 1  # Increment when actually charging
+        print(f"🔋 Robot charged! Total charges: {self.return_charge_count}")
 
     def run_ccpp_with_bwave_environment(self, map_file, energy_capacity=1000, dynamic_speed=0.1):
         """
@@ -173,6 +173,7 @@ class CCPPInBWaveEnvironment:
         self.ccpp_robot.external_input[start_y, start_x] = 0.0
         self.ui.map[start_y][start_x] = 'e'
         self.total_coverage_cells = 1  # Starting position counts as first coverage
+        self.ui.task((start_y, start_x))  # Mark in UI as explored
         print(f"🤖 CCPP Robot initialized at ({start_x}, {start_y}) - marked as VISITED")
         print(f"🧠 Initial neural activity: {self.ccpp_robot.neural_activity[start_y, start_x].item():.2f}")
 
@@ -328,7 +329,7 @@ class CCPPInBWaveEnvironment:
                                 self.ccpp_robot.position = pos
                                 self.ccpp_robot.path.append(pos)
 
-                                # Update energy for return movement (0.5x cost)
+                                # Update energy for return movement (0.5x cost) - NOT coverage
                                 self.update_energy_system(distance, is_coverage=False)
                                 self.total_travel_length += distance
                             # Charge robot
@@ -349,9 +350,9 @@ class CCPPInBWaveEnvironment:
 
                         # BWave metrics tracking
                         self.total_travel_length += distance  # Distance-based
-                        self.total_coverage_cells += 1  # Coverage task count
+                        self.coverage_length += distance  # Coverage segment only
+                        self.total_coverage_cells += 1  # Count each coverage task
                         self.update_energy_system(distance, is_coverage=True)
-                        self.coverage_length += distance
 
                         # Update BWave UI map for visualization
                         self.ui.map[next_pos.y][next_pos.x] = 'e'  # Mark as explored
@@ -389,21 +390,20 @@ class CCPPInBWaveEnvironment:
                                 self.ccpp_robot.position = pos
                                 self.ccpp_robot.path.append(pos)
 
-                                # Update energy for backtrack movement (0.5x cost)
+                                # Update energy for backtrack movement (0.5x cost) - NOT coverage
                                 self.update_energy_system(distance, is_coverage=False)
                                 self.total_travel_length += distance
-
                                 # ✅ IMPORTANT: Don't mark visited cells as explored again during backtracking
                                 # Only mark truly unvisited cells
                                 if self.ccpp_robot.grid_state[pos.y, pos.x].item() == GridState.UNVISITED.value:
                                     self.ccpp_robot.grid_state[pos.y, pos.x] = GridState.VISITED.value
                                     self.ccpp_robot.external_input[pos.y, pos.x] = 0.0
                                     self.ui.map[pos.y][pos.x] = 'e'
-                                    self.total_coverage_cells += 1  # Count coverage task
+                                    self.ui.task((pos.y, pos.x))
+                                    self.total_coverage_cells += 1
                                     self.coverage_length += distance
-
                                 print(
-                                    f"  ↳ Backtrack step {i + 1}: ({pos.x}, {pos.y}) - Energy: {self.current_energy:.1f}")
+                                    f"Backtrack step {i + 1}: ({pos.x}, {pos.y}) - Energy: {self.current_energy:.1f}")
                         else:
                             # Cannot reach backtrack point, remove it from list
                             print(f"❌ Cannot reach backtrack point {backtrack_point.x}, {backtrack_point.y}")

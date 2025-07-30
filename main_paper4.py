@@ -62,8 +62,8 @@ MIN_PROB_THRESHOLD = 3
 
 # Project B dynamic obstacles
 dynamic_obs_list = []
-project_b_velocity = max(int(args.speed * 100), 1)  # Convert to integer, min 1
-dynamic_obs_list.append(DynamicObstacle((3, 6), (2, 1), 4, project_b_velocity))
+dynamic_obs_list.append(DynamicObstacle((3, 6), (2, 1), 4, 10))
+
 
 def check_valid_pos(pos):
     row, col = pos
@@ -119,7 +119,7 @@ class Robot:
         self.predict_map = None
         self.prob_map = None
         self.seen_map = None
-        self.velocity = max(int(args.speed * 100), 1)  # Match with Project A speed
+        self.velocity = 10
         self.scan_freq = 2
         self.alpha_1 = 0.3
         self.alpha_2 = 0.7
@@ -609,8 +609,8 @@ class Robot:
                 obs.move_one_step(self.static_map)
 
             # Mark obstacle positions
-            for dx in range(int(obs.height)):
-                for dy in range(int(obs.width)):
+            for dx in range(obs.height):
+                for dy in range(obs.width):
                     x, y = obs.cur_row + dx, obs.cur_col + dy
                     if self.current_pos == (x, y):
                         print("Collision with Project B dynamic obstacle!")
