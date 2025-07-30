@@ -6,7 +6,7 @@ import argparse
 import math
 
 # Import Project A environment
-from grid_map import Grid_Map, EPSILON
+from grid_map import Grid_Map
 from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Import Project D algorithm
@@ -24,7 +24,7 @@ class CCPPInBWaveEnvironment:
         # Metrics tracking - BWave compliant
         self.total_travel_length = 0.0
         self.coverage_length = 0
-        self.return_charge_count = 1
+        self.return_charge_count = 0
         self.deadlock_count = 0
         self.extreme_deadlock_count = 0
         self.execute_time = 0
@@ -105,7 +105,7 @@ class CCPPInBWaveEnvironment:
     def charge_robot(self):
         """Charge robot to full capacity"""
         self.current_energy = self.energy_capacity
-        self.return_charge_count += 1
+        self.return_charge_count += 1  # Chỉ tăng khi thực sự charge
         print(f"🔋 Robot charged! Charge count: {self.return_charge_count}")
 
     def run_ccpp_with_bwave_environment(self, map_file, energy_capacity=1000, dynamic_speed=0.1):
@@ -190,7 +190,6 @@ class CCPPInBWaveEnvironment:
         self.total_free_cells = np.sum(environment == 0)
         print(f"Total free cells in environment: {self.total_free_cells}")
         self.energy_capacity = energy_capacity
-        self.current_energy = energy_capacity
 
         print(f"🤖 CCPP Robot initialized at ({start_x}, {start_y})")
 
@@ -283,7 +282,7 @@ class CCPPInBWaveEnvironment:
                 clock.tick(FPS)
                 continue
 
-            # 5. CCPP Algorithm Step (Project D) - Chỉ chạy mỗi 4 frames
+                # 5. CCPP Algorithm Step (Project D) - Chỉ chạy mỗi 4 frames
             algorithm_step_counter = getattr(self, 'algorithm_step_counter', 0)
             algorithm_step_counter += 1
 
@@ -360,6 +359,7 @@ class CCPPInBWaveEnvironment:
                 elif self.ccpp_robot.is_deadlock():
                     # Deadlock situation (Algorithm 2) - BWave compliant
                     self.deadlock_count += 1
+                    backtrack_point = self.ccpp_robot.select_best_backtrack_point()
 
                     # Tính extreme deadlock (dist > 1/4 diagonal)
                     if backtrack_point:
@@ -370,13 +370,12 @@ class CCPPInBWaveEnvironment:
                         diagonal_quarter = math.sqrt(COL_COUNT ** 2 + ROW_COUNT ** 2) / 4
                         if backtrack_distance > diagonal_quarter:
                             self.extreme_deadlock_count += 1
-                    backtrack_point = self.ccpp_robot.select_best_backtrack_point()
+
                     if backtrack_point:
                         print(f"🔙 Backtracking to {backtrack_point.x}, {backtrack_point.y}")
-                        # Use dynamic A* for backtracking - ALLOW movement through visited cells
+                        # Use dynamic A* for backtracking
                         path = self.ccpp_robot.dynamic_a_star(self.ccpp_robot.position, backtrack_point)
                         if path and len(path) > 1:
-                            print(f"📍 Backtrack path length: {len(path) - 1} steps")
                             for i, pos in enumerate(path[1:]):  # Skip current position
                                 # ✅ IMPROVED: Check energy during backtracking
                                 if not self.check_energy_for_return(pos, battery_pos):
@@ -396,10 +395,11 @@ class CCPPInBWaveEnvironment:
 
                                 # ✅ IMPORTANT: Don't mark visited cells as explored again during backtracking
                                 # Only mark truly unvisited cells
-                                if self.ccpp_robot.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
+                                if self.ccpp_robot.grid_state[pos.y, pos.x].item() == GridState.UNVISITED.value:
                                     self.ccpp_robot.grid_state[pos.y, pos.x] = GridState.VISITED.value
                                     self.ccpp_robot.external_input[pos.y, pos.x] = 0.0
                                     self.ui.map[pos.y][pos.x] = 'e'
+                                    self.total_coverage_cells += 1  # Count coverage task
                                     self.coverage_length += distance
 
                                 print(
@@ -447,16 +447,16 @@ class CCPPInBWaveEnvironment:
                                     self.total_travel_length += distance
 
                                     # Only mark truly unvisited cells
-                                    if self.ccpp_robot.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
+                                    if self.ccpp_robot.grid_state[pos.y, pos.x].item() == GridState.UNVISITED.value:
                                         self.ccpp_robot.grid_state[pos.y, pos.x] = GridState.VISITED.value
                                         self.ccpp_robot.external_input[pos.y, pos.x] = 0.0
                                         self.ui.map[pos.y][pos.x] = 'e'
+                                        self.total_coverage_cells += 1  # Count coverage task
                                         self.coverage_length += distance
 
                                     # Update UI visualization for each step
                                     robot_pos_bwave = (pos.y, pos.x)
                                     self.ui.update_vehicle_pos(robot_pos_bwave)
-                                    print("Backing to the backtrack point")
                                 continue  # Continue the algorithm loop
                         # Paper compliant: Terminate if no backtrack points available
                         print("❌ No reachable unvisited cells found - terminating")
@@ -512,27 +512,6 @@ class CCPPInBWaveEnvironment:
 
         # 7. Final Results
         self.execute_time = time.time() - self.execute_time
-
-        # Calculate final metrics
-        total_cells = COL_COUNT * ROW_COUNT
-        obstacle_cells = len(static_obstacles) + len(dynamic_positions)
-        visited_cells = torch.sum(self.ccpp_robot.grid_state == GridState.VISITED.value).item()
-        accessible_cells = total_cells - obstacle_cells
-        final_coverage_rate = visited_cells / accessible_cells if accessible_cells > 0 else 0
-
-        overlap_rate = ((len(self.ccpp_robot.path) / visited_cells) - 1) * 100 if visited_cells > 0 else 0
-
-        print("\n" + "=" * 80)
-        print("🎯 CCPP IN BWAVE ENVIRONMENT - FINAL RESULTS")
-        print("=" * 80)
-        print(f"📊 Coverage Rate: {final_coverage_rate:.2%}")
-        print(f"📏 Total Path Length: {len(self.ccpp_robot.path)}")
-        print(f"📈 Overlap Rate: {overlap_rate:.2f}%")
-        print(f"🔴 Deadlocks: {self.deadlock_count}")
-        print(f"🔋 Charging Returns: {self.return_charge_count}")
-        print(f"⏱️  Execution Time: {self.execute_time:.2f}s")
-        print(f"🎮 Total Steps: {step}")
-
         print("\n✅ CCPP Algorithm completed in BWave Environment!")
         # ===== BWave Framework Metrics (theo đúng Paper) =====
         print('\n' + '=' * 50)
@@ -559,6 +538,16 @@ class CCPPInBWaveEnvironment:
         print(f'5. Execution Time: {self.execute_time:.3f}s')
 
         print('=' * 50)
+        # Calculate final metrics for return value
+        total_cells = COL_COUNT * ROW_COUNT
+        obstacle_cells = len(static_obstacles)
+        visited_cells = torch.sum(self.ccpp_robot.grid_state == GridState.VISITED.value).item()
+        accessible_cells = total_cells - obstacle_cells
+        final_coverage_rate = visited_cells / accessible_cells if accessible_cells > 0 else 0
+
+        # BWave overlap rate calculation
+        bwave_overlap_rate = (
+                                         self.total_coverage_cells / self.total_free_cells - 1) * 100 if self.total_free_cells > 0 else 0
 
         # Keep window open for result viewing
         print("🖼️  Press any key to close visualization...")
@@ -572,8 +561,8 @@ class CCPPInBWaveEnvironment:
 
         return {
             'coverage_rate': final_coverage_rate,
-            'path_length': len(self.ccpp_robot.path),
-            'overlap_rate': overlap_rate,
+            'path_length': self.total_travel_length,  # Use distance-based như BWave
+            'overlap_rate': bwave_overlap_rate,  # Use BWave formula
             'deadlock_count': self.deadlock_count,
             'return_charge_count': self.return_charge_count,
             'execution_time': self.execute_time,
