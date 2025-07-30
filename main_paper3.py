@@ -5,11 +5,11 @@ import time
 import argparse
 import math
 
-# Import Project A environment (KHÔNG SỬA GỐC)
+# Import Project A environment
 from grid_map import Grid_Map, EPSILON
 from dynamic_obstacles_manager import DynamicObstaclesManager
 
-# Import Project D algorithm (KHÔNG SỬA GỐC)
+# Import Project D algorithm 
 from project_D.ccpp_robot_main import CCPPRobot, GridState, Position
 
 class CCPPInBWaveEnvironment:
