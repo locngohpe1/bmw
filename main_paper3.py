@@ -172,7 +172,7 @@ class CCPPInBWaveEnvironment:
         self.ccpp_robot.grid_state[start_y, start_x] = GridState.VISITED.value
         self.ccpp_robot.external_input[start_y, start_x] = 0.0
         self.ui.map[start_y][start_x] = 'e'
-
+        self.total_coverage_cells = 1  # Starting position counts as first coverage
         print(f"🤖 CCPP Robot initialized at ({start_x}, {start_y}) - marked as VISITED")
         print(f"🧠 Initial neural activity: {self.ccpp_robot.neural_activity[start_y, start_x].item():.2f}")
 
@@ -190,7 +190,7 @@ class CCPPInBWaveEnvironment:
         self.total_free_cells = np.sum(environment == 0)
         print(f"Total free cells in environment: {self.total_free_cells}")
         self.energy_capacity = energy_capacity
-
+        self.current_energy = energy_capacity
         print(f"🤖 CCPP Robot initialized at ({start_x}, {start_y})")
 
         # 4. Main Algorithm Loop với BWave Visualization
@@ -282,7 +282,7 @@ class CCPPInBWaveEnvironment:
                 clock.tick(FPS)
                 continue
 
-                # 5. CCPP Algorithm Step (Project D) - Chỉ chạy mỗi 4 frames
+            # 5. CCPP Algorithm Step (Project D) - Chỉ chạy mỗi 4 frames
             algorithm_step_counter = getattr(self, 'algorithm_step_counter', 0)
             algorithm_step_counter += 1
 
@@ -553,12 +553,21 @@ class CCPPInBWaveEnvironment:
         print("🖼️  Press any key to close visualization...")
         waiting = True
         while waiting:
-            for event in pg.event.get():
-                if event.type == pg.QUIT or event.type == pg.KEYDOWN:
-                    waiting = False
+            try:
+                for event in pg.event.get():
+                    if event.type == pg.QUIT or event.type == pg.KEYDOWN:
+                        waiting = False
+                        break
+                pg.time.wait(100)  # Prevent high CPU usage
+            except KeyboardInterrupt:
+                print("\n🚪 User interrupted - closing...")
+                waiting = False
+                break
 
-        pg.quit()
-
+        try:
+            pg.quit()
+        except:
+            pass
         return {
             'coverage_rate': final_coverage_rate,
             'path_length': self.total_travel_length,  # Use distance-based như BWave
@@ -585,13 +594,26 @@ def main():
     print(f"🏃 Dynamic Speed: {args.speed}")
 
     ccpp_env = CCPPInBWaveEnvironment()
-    results = ccpp_env.run_ccpp_with_bwave_environment(
-        map_file=args.map,
-        energy_capacity=args.energy,
-        dynamic_speed=args.speed
-    )
-
-    print("\n🎉 Execution completed successfully!")
+    try:
+        results = ccpp_env.run_ccpp_with_bwave_environment(
+            map_file=args.map,
+            energy_capacity=args.energy,
+            dynamic_speed=args.speed
+        )
+        print("\n🎉 Execution completed successfully!")
+    except KeyboardInterrupt:
+        print("\n🚪 Program interrupted by user (Ctrl+C)")
+        print("🔍 Partial results may be incomplete")
+        try:
+            pg.quit()
+        except:
+            pass
+    except Exception as e:
+        print(f"\n❌ Error occurred: {e}")
+        try:
+            pg.quit()
+        except:
+            pass
 
 
 if __name__ == "__main__":
