@@ -2,15 +2,11 @@ import math
 import numpy as np
 import pygame as pg
 import time
-import csv
 import torch
 import argparse
 
 from project_B.logic_projectB import LogicAlgorithm, Q as Q_B
 from grid_map import Grid_Map, EPSILON
-from obstacle_classifier import ObstacleClassifier
-from dynamic_obstacle_handler import DynamicObstacleHandler
-from virtual_camera import VirtualCamera
 from dynamic_obstacles_manager import DynamicObstaclesManager
 from project_B.dynamic_obstacle_projectB import DynamicObstacle
 from collections import deque
@@ -46,6 +42,8 @@ deadlock_count = 0
 extreme_deadlock_count = 0
 dynamic_wait_count = 0  # Đếm số lần robot phải chờ do vật cản động
 execute_time = time.time()
+total_coverage_cells = 0  # Tổng số cells đã được coverage (có thể overlap)
+total_free_cells = 0     # Tổng số free cells trong environment
 
 # Find special area
 from optimization import get_special_area
@@ -64,8 +62,8 @@ MIN_PROB_THRESHOLD = 3
 
 # Project B dynamic obstacles
 dynamic_obs_list = []
-dynamic_obs_list.append(DynamicObstacle((3, 6), (2, 1), 4, 10))
-
+project_b_velocity = max(int(args.speed * 100), 1)  # Convert to integer, min 1
+dynamic_obs_list.append(DynamicObstacle((3, 6), (2, 1), 4, project_b_velocity))
 
 def check_valid_pos(pos):
     row, col = pos
@@ -121,7 +119,7 @@ class Robot:
         self.predict_map = None
         self.prob_map = None
         self.seen_map = None
-        self.velocity = 10
+        self.velocity = max(int(args.speed * 100), 1)  # Match with Project A speed
         self.scan_freq = 2
         self.alpha_1 = 0.3
         self.alpha_2 = 0.7
@@ -267,7 +265,6 @@ class Robot:
                         self.dynamic_map[pos] = 3  # dynamic obstacle
                 # Initialize selected_cell
                 selected_cell = None
-
                 # CRITICAL FIX: Call task() BEFORE getting waypoint (like Project B)
                 if self.logic.state != Q_B.DEADLOCK:
                     self.task()
@@ -372,6 +369,7 @@ class Robot:
         return min(wp, key=self.travel_cost)
 
     def task(self):
+        global total_coverage_cells
         current_pos = self.current_pos
         # Update Project B maps
         self.static_map[current_pos] = 2
@@ -382,6 +380,7 @@ class Robot:
         self.logic.weight_map[current_pos] = 2
 
         ui.task(current_pos)
+        total_coverage_cells += 1
         print(f"DEBUG TASK: Marked {current_pos} as visited, weight_map value: {self.logic.weight_map[current_pos]}")
 
         # Initialize self.map for compatibility
@@ -606,12 +605,12 @@ class Robot:
 
         # Move Project B dynamic obstacles
         for obs in dynamic_obs_list:
-            if loop_count % obs.velocity == 0:
+            if loop_count % int(obs.velocity) == 0:
                 obs.move_one_step(self.static_map)
 
             # Mark obstacle positions
-            for dx in range(obs.height):
-                for dy in range(obs.width):
+            for dx in range(int(obs.height)):
+                for dy in range(int(obs.width)):
                     x, y = obs.cur_row + dx, obs.cur_col + dy
                     if self.current_pos == (x, y):
                         print("Collision with Project B dynamic obstacle!")
@@ -627,8 +626,8 @@ class Robot:
                 # Mark all cells occupied by manual obstacle
                 if isinstance(obs_size, tuple):
                     height, width = obs_size
-                    for dr in range(height):
-                        for dc in range(width):
+                    for dr in range(int(height)):
+                        for dc in range(int(width)):
                             x, y = obs_pos[0] + dr, obs_pos[1] + dc
                             if 0 <= x < row_count and 0 <= y < col_count:
                                 self.dynamic_map[x, y] = 3
@@ -890,7 +889,10 @@ class Robot:
 def main():
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
     robot.set_map(ENVIRONMENT)
-    # robot.set_special_areas(special_areas)
+    # Tính tổng số free cells (S_free) trong environment
+    global total_free_cells
+    total_free_cells = np.sum(ENVIRONMENT == 0)  # Đếm số cells = 0 (free space)
+    print(f"Total free cells in environment: {total_free_cells}")
 
     # Khởi tạo trình quản lý vật cản động với manual obstacles từ ui
     global dynamic_obstacles
@@ -911,33 +913,31 @@ def main():
     execute_time = time.time()
     robot.run()
 
-    print('\nCoverage:\t', coverage_length)
-    print('Retreat:\t', retreat_length)
-    print('Advance:\t', advance_length)
-    print('-' * 8)
-    print('Total:', total_travel_length)
+    # ===== BWave Framework Metrics (theo đúng Paper) =====
+    print('\n' + '=' * 50)
+    print('BWAVE FRAMEWORK METRICS')
+    print('=' * 50)
 
-    visited_cells = np.sum(robot.static_map == 2)  # Use static_map instead
-    if visited_cells > 0:
-        overlap_rate = (count_cell_go_through / visited_cells - 1) * 100
+    # 1. Total Path Length (đã có)
+    print(f'1. Total Path Length: {total_travel_length:.2f}')
+
+    # 2. Overlap Rate (theo công thức BWave paper)
+    if total_free_cells > 0:
+        bwave_overlap_rate = (total_coverage_cells / total_free_cells - 1) * 100
+        print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')
     else:
-        overlap_rate = 0
-    print('\nOverlap rate: ', overlap_rate)
-    print('Number Of Return: ', return_charge_count)
-    print('Number of extreme deadlock:', extreme_deadlock_count, '/', deadlock_count)
-    print('Number of dynamic obstacle waits:', dynamic_wait_count)
-    print('Time: ', execute_time)
+        print('2. Overlap Rate: 0.00%')
 
-    # Summary metrics
-    print("\n=== SUMMARY ===")
-    print(f"Efficiency Score: {((1 - overlap_rate / 100) * 100):.1f}% (lower overlap = better)")
-    print(f"Speed Improvement: {execute_time:.1f}s total")
-    print(f"Dynamic Handling: {dynamic_wait_count} waits, {len(robot.detected_positions)} unique detections")
-    print(f"Energy Efficiency: {return_charge_count} charges, avg distance per charge: {coverage_length / return_charge_count:.1f}")
+    # 3. Number of Returns
+    print(f'3. Number of Returns: {return_charge_count}')
 
-    # Safe access với fallback
-    total_moves = getattr(robot, 'total_moves', count_cell_go_through) or 1  # Prevent division by zero
-    print(f"Average move time: {execute_time / total_moves:.3f}s per move")
+    # 4. Number of Deadlocks (total và extreme)
+    print(f'4. Number of Deadlocks: {deadlock_count} (extreme: {extreme_deadlock_count})')
+
+    # 5. Execution Time
+    print(f'5. Execution Time: {execute_time:.3f}s')
+
+    print('=' * 50)
 
 if __name__ == "__main__":
     main()

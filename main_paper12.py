@@ -49,7 +49,6 @@ dynamic_obstacles = None  # Global reference cho dynamic obstacles manager
 execute_time = time.time()
 total_coverage_cells = 0  # Tổng số cells đã được coverage (có thể overlap)
 total_free_cells = 0     # Tổng số free cells trong environment
-coverage_segments_count = 0  # Số coverage segments
 # Find special area
 from optimization import get_special_area
 
@@ -307,7 +306,7 @@ class Robot:
         total_coverage_cells += 1  # Đếm mỗi lần task (coverage)
 
     def move_to(self, pos):
-        global total_travel_length, coverage_length, retreat_length, advance_length, count_cell_go_through
+        global total_travel_length, coverage_length, retreat_length, advance_length
         dist = energy = math.dist(self.current_pos, pos)
 
         if self.move_status in (1, 3):  # retreat or advance cost half energy as coverage
