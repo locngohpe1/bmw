@@ -87,7 +87,8 @@ def main():
     if args.maps:
         map_files = args.maps
         print(f"📋 Using provided maps: {map_files}")
-        print("ℹ️ You will setup environment ONCE per map, then all 3 algorithms will run automatically")
+        print("ℹ️ Setup environment ONCE, then all 3 algorithms run automatically")
+        print("ℹ️ Press ENTER in map editor to continue to algorithm testing")
     else:
         print("📋 Creating test maps...")
         map_files = []

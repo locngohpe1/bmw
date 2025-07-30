@@ -1,0 +1,15 @@
+{
+  "map_file": "map/real_map/denmark.txt",
+  "battery_pos": [
+    0,
+    0
+  ],
+  "energy_capacity": 1000,
+  "dynamic_speed": 0.1,
+  "dynamic_obstacles_count": 0,
+  "environment_shape": [
+    66,
+    99
+  ],
+  "timestamp": 1753893964.6361234
+}

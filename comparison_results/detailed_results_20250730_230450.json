@@ -1,0 +1,56 @@
+[
+  {
+    "map_file": "test_maps\\test_map_20x20_obs20.txt",
+    "config": {
+      "map_file": "test_maps\\test_map_20x20_obs20.txt",
+      "environment": "[[0 0 0 0 0 0 1 1 0 0 0 1 0 0 1 0 1 0 1 0]\n [1 0 0 1 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0]\n [0 0 0 0 0 1 0 0 1 1 0 1 0 0 1 1 1 0 0 0]\n [0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0]\n [0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 1 1]\n [0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 1 1 0 0 0]\n [0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0]\n [1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0]\n [0 0 1 0 1 0 0 0 1 1 1 0 0 0 0 0 0 0 0 0]\n [1 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1]\n [0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1]\n [0 0 0 0 0 1 0 0 0 1 0 1 0 0 0 1 0 1 0 0]\n [0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0]\n [0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0]\n [0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 1 1 1 0]\n [0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0]\n [0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 1 1 1 0]\n [0 0 0 0 0 0 1 0 1 0 0 0 1 0 1 1 1 0 0 0]\n [1 0 1 0 0 1 0 1 0 0 0 1 1 0 0 1 1 0 0 0]\n [0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0 0]]",
+      "battery_pos": [
+        0,
+        0
+      ],
+      "energy_capacity": 1000,
+      "dynamic_speed": 0.1,
+      "dynamic_obstacles": [],
+      "row_count": 20,
+      "col_count": 20
+    },
+    "algorithms": {
+      "Project A": {
+        "total_path_length": 0,
+        "coverage_length": 0,
+        "overlap_rate": 0,
+        "overlap_times": 0,
+        "deadlocks": 0,
+        "extreme_deadlocks": 0,
+        "return_count": 1,
+        "total_steps": 5000,
+        "algorithm": "Project A - BWave Framework",
+        "execution_time": 0.041635990142822266,
+        "success": true
+      },
+      "Project D": {
+        "total_path_length": 10.0,
+        "coverage_length": 10.0,
+        "overlap_rate": 0,
+        "overlap_times": 0,
+        "deadlocks": 0,
+        "extreme_deadlocks": 0,
+        "return_count": 1,
+        "total_steps": 5000,
+        "algorithm": "Project D - Neural Dynamics CCPP",
+        "execution_time": 726.5369136333466,
+        "success": true
+      },
+      "Project C": {
+        "coverage_length": 1000.0,
+        "overlap_times": 0,
+        "extreme_deadlocks": 0,
+        "return_count": 1,
+        "total_steps": 1001,
+        "algorithm": "Project C - Multi-UAV Auction",
+        "execution_time": 0.04407358169555664,
+        "success": true
+      }
+    }
+  }
+]

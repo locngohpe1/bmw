@@ -1,0 +1,53 @@
+[
+  {
+    "map_file": "test_maps\\test_map_20x20_obs20.txt",
+    "config": {
+      "map_file": "test_maps\\test_map_20x20_obs20.txt",
+      "environment": "[[0 0 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0]\n [0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]\n [0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0]\n [1 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1]\n [0 1 0 0 0 0 1 0 0 0 0 1 0 1 1 0 1 0 0 0]\n [1 0 0 0 0 1 0 0 0 0 1 0 0 1 0 1 0 0 0 0]\n [0 0 1 1 0 0 0 0 0 0 0 0 0 1 1 0 1 0 1 0]\n [0 0 0 0 1 0 0 0 0 0 0 1 1 0 0 0 0 0 1 1]\n [0 1 0 1 0 0 0 0 0 0 0 0 1 0 0 1 0 0 1 1]\n [1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 1 0 0 0]\n [0 0 1 0 0 0 0 0 0 0 0 0 0 1 1 0 1 0 1 0]\n [0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]\n [0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 0 0 1]\n [0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0]\n [0 0 0 0 1 1 1 0 0 0 0 0 0 1 0 0 0 1 0 0]\n [0 1 0 0 0 0 0 0 1 0 0 0 0 1 0 0 1 0 0 0]\n [0 0 0 0 1 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0]\n [0 1 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0]\n [1 1 0 0 1 0 0 1 1 0 1 0 0 0 0 0 0 1 0 0]\n [0 0 0 0 1 0 0 0 0 0 0 1 1 1 0 0 0 0 0 0]]",
+      "battery_pos": [
+        0,
+        0
+      ],
+      "energy_capacity": 1000,
+      "dynamic_speed": 0.1,
+      "dynamic_obstacles": [],
+      "row_count": 20,
+      "col_count": 20
+    },
+    "algorithms": {
+      "Project A": {
+        "algorithm": "Project A - BWave Framework",
+        "success": false,
+        "error": "'NoneType' object has no attribute 'blit'",
+        "execution_time": 0,
+        "total_path_length": 0,
+        "overlap_rate": 0,
+        "extreme_deadlocks": 0,
+        "return_count": 0
+      },
+      "Project D": {
+        "total_path_length": 100,
+        "coverage_length": 100,
+        "overlap_rate": 5,
+        "overlap_times": 5,
+        "deadlocks": 2,
+        "extreme_deadlocks": 0,
+        "return_count": 2,
+        "execution_time": 181.23308873176575,
+        "total_steps": 5000,
+        "algorithm": "Project D - Neural Dynamics CCPP",
+        "success": true
+      },
+      "Project C": {
+        "algorithm": "Project C - Multi-UAV Auction",
+        "success": false,
+        "error": "'NoneType' object has no attribute 'blit'",
+        "execution_time": 0,
+        "total_path_length": 0,
+        "overlap_rate": 0,
+        "extreme_deadlocks": 0,
+        "return_count": 0
+      }
+    }
+  }
+]
