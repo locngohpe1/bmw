@@ -15,22 +15,13 @@ def init_weight_map_mask(row, col):
     for i, row_value in enumerate(weight_map):
         for j, col_value in enumerate(row_value):
             weight_map[i][j] = col - j
-            # weight_map[i][j] = j + 1
-    
+
     return weight_map
 
 class Logic:
     def __init__(self, row_count, col_count, grid_map=None, custom_field_b=None):
         self.grid_map = grid_map
         self.state = Q.START
-        # '''
-        # map (vision update done in class Robot):
-        #     'u': unvisited
-        #     'e': explored
-        #     'o': obstacle
-        #     (removed) 'f': forbidden
-        # '''
-        # self.map = np.full((row_count, col_count), '_')
         self.weight_map = init_weight_map_mask(row_count, col_count)
         self._prev_wp = []
         self.cache_path = []
@@ -164,47 +155,6 @@ class Logic:
         path = list(reversed(path))
         return path
     
-    # def get_local_extreme_wp(self, current_pos):
-    #     weight_map = self.weight_map
-
-    #     queue = deque()
-    #     visited = []
-    #     candidate_res = []
-    #     stop_depth = -1
-
-    #     # queue of (pos, distance to current_pos, depth)
-    #     queue.append((current_pos, 0, 0))
-    #     visited.append(current_pos)
-        
-    #     while queue:
-    #         cur_node, cur_dis, cur_depth = queue.popleft()
-    #         if stop_depth != -1 and cur_depth != stop_depth: 
-    #             return [min(candidate_res, key = lambda x: x[1])[0]] # return index 0 that has index 1 min
-
-    #         # traverse neighbors
-    #         for dx, dy in neighbors:
-    #             x, y = cur_node[0] + dx, cur_node[1] + dy
-                
-    #             if x < 0 or x >= len(weight_map): continue
-    #             if y < 0 or y >= len(weight_map[0]): continue
-
-    #             if weight_map[x, y] < 0: continue       # obstacle
-    #             elif weight_map[x, y] == 0:             # explored
-    #                 if (x, y) not in visited:
-    #                     visited.append((x, y))
-    #                     queue.append( ((x, y), cur_dis + math.dist(cur_node, (x, y)), cur_depth + 1) )
-    #                 continue 
-    #             else: # return [(x, y)]         # first unexplored found
-    #                 if stop_depth == -1: stop_depth = cur_depth
-    #                 candidate_res.append( ((x, y), cur_dis + math.dist(cur_node, (x, y))) )
-        
-    #     # bugfix
-    #     if len(candidate_res) > 0:
-    #         return [min(candidate_res, key = lambda x: x[1])[0]] # return index 0 that has index 1 min
-        
-    #     return []
-    
-    # Get positive weight neighbor cell 
     def get_set_D(self, current_pos):
         x_cur, y_cur = current_pos
         weight_map = self.weight_map

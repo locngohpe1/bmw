@@ -3,10 +3,7 @@ import numpy as np
 from collections import deque
 
 neighbors = [(0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1)]
-# neighbors = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
-# neighbors = [(-1, 0), (0, -1), (1, 0), (0, 1)]
-
-# Matrix of [position from, distance to battery] of each grid cell (Dijkstra shortest path) 
+# Matrix of [position from, distance to battery] of each grid cell (Dijkstra shortest path)
 def return_path_matrix(environment, battery_position):
     return_matrix = np.zeros(environment.shape, dtype=object)
     for x in range(len(return_matrix)):
