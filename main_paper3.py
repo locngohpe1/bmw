@@ -9,7 +9,7 @@ import math
 from grid_map import Grid_Map, EPSILON
 from dynamic_obstacles_manager import DynamicObstaclesManager
 
-# Import Project D algorithm 
+# Import Project D algorithm
 from project_D.ccpp_robot_main import CCPPRobot, GridState, Position
 
 class CCPPInBWaveEnvironment:
@@ -21,12 +21,15 @@ class CCPPInBWaveEnvironment:
         self.energy_capacity = 1000
         self.current_energy = 1000
 
-        # Metrics tracking
-        self.total_travel_length = 0
+        # Metrics tracking - BWave compliant
+        self.total_travel_length = 0.0
         self.coverage_length = 0
         self.return_charge_count = 1
         self.deadlock_count = 0
+        self.extreme_deadlock_count = 0
         self.execute_time = 0
+        self.total_coverage_cells = 0
+        self.total_free_cells = 0
 
     def convert_bwave_to_ccpp_map(self, bwave_map, width, height):
         """Convert BWave map format to CCPP format"""
@@ -183,6 +186,9 @@ class CCPPInBWaveEnvironment:
         # Update UI to show robot at charging station
         self.ui.update_vehicle_pos((start_y, start_x))  # UI uses (row, col)
         # Set energy system
+        # Tính tổng số free cells (S_free) - BWave compliant
+        self.total_free_cells = np.sum(environment == 0)
+        print(f"Total free cells in environment: {self.total_free_cells}")
         self.energy_capacity = energy_capacity
         self.current_energy = energy_capacity
 
@@ -342,17 +348,28 @@ class CCPPInBWaveEnvironment:
                         self.ccpp_robot.grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                         self.ccpp_robot.external_input[next_pos.y, next_pos.x] = 0.0
 
-                        # Update energy
+                        # BWave metrics tracking
+                        self.total_travel_length += distance  # Distance-based
+                        self.total_coverage_cells += 1  # Coverage task count
                         self.update_energy_system(distance, is_coverage=True)
                         self.coverage_length += distance
-                        self.total_travel_length += distance
 
                         # Update BWave UI map for visualization
                         self.ui.map[next_pos.y][next_pos.x] = 'e'  # Mark as explored
 
                 elif self.ccpp_robot.is_deadlock():
-                    # Deadlock situation (Algorithm 2)
+                    # Deadlock situation (Algorithm 2) - BWave compliant
                     self.deadlock_count += 1
+
+                    # Tính extreme deadlock (dist > 1/4 diagonal)
+                    if backtrack_point:
+                        backtrack_distance = math.sqrt(
+                            (backtrack_point.x - self.ccpp_robot.position.x) ** 2 +
+                            (backtrack_point.y - self.ccpp_robot.position.y) ** 2
+                        )
+                        diagonal_quarter = math.sqrt(COL_COUNT ** 2 + ROW_COUNT ** 2) / 4
+                        if backtrack_distance > diagonal_quarter:
+                            self.extreme_deadlock_count += 1
                     backtrack_point = self.ccpp_robot.select_best_backtrack_point()
                     if backtrack_point:
                         print(f"🔙 Backtracking to {backtrack_point.x}, {backtrack_point.y}")
@@ -517,6 +534,31 @@ class CCPPInBWaveEnvironment:
         print(f"🎮 Total Steps: {step}")
 
         print("\n✅ CCPP Algorithm completed in BWave Environment!")
+        # ===== BWave Framework Metrics (theo đúng Paper) =====
+        print('\n' + '=' * 50)
+        print('BWAVE FRAMEWORK METRICS')
+        print('=' * 50)
+
+        # 1. Total Path Length (distance-based như BWave gốc)
+        print(f'1. Total Path Length: {self.total_travel_length:.2f}')
+
+        # 2. Overlap Rate (theo công thức BWave paper)
+        if self.total_free_cells > 0:
+            bwave_overlap_rate = (self.total_coverage_cells / self.total_free_cells - 1) * 100
+            print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')
+        else:
+            print('2. Overlap Rate: 0.00%')
+
+        # 3. Number of Returns
+        print(f'3. Number of Returns: {self.return_charge_count}')
+
+        # 4. Number of Deadlocks (total và extreme)
+        print(f'4. Number of Deadlocks: {self.deadlock_count} (extreme: {self.extreme_deadlock_count})')
+
+        # 5. Execution Time
+        print(f'5. Execution Time: {self.execute_time:.3f}s')
+
+        print('=' * 50)
 
         # Keep window open for result viewing
         print("🖼️  Press any key to close visualization...")
