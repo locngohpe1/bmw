@@ -563,10 +563,16 @@ class Robot:
                     pos_key = (abs_row, abs_col)
 
                     if class_name == 'dynamic' and pos_key not in self.detected_positions:
-                        self.detected_positions.add(pos_key)
+                        # Mark as discovered dynamic obstacle
                         self.map[pos_key] = 'd'
-
-                        # Register with dynamic obstacle handler
+                        # Mark obstacle as discovered in simulation
+                        for obs in dynamic_obstacles.obstacles:
+                            if abs(obs['pos'][0] - abs_row) <= 1 and abs(obs['pos'][1] - abs_col) <= 1:
+                                if obs.get('hidden', False):
+                                    obs['hidden'] = False
+                                    obs['discovered'] = True
+                                    print(f"🔍 FIRST DISCOVERY: Dynamic obstacle at {pos_key}!")
+                                break
                         obstacle_id = f"googlet_{self.next_obstacle_id}"
                         self.next_obstacle_id += 1
                         self.dynamic_obstacle_ids[pos_key] = obstacle_id
