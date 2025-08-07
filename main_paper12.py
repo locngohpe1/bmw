@@ -2,7 +2,6 @@ import math
 import numpy as np
 import pygame as pg
 import time
-import csv
 import torch
 import threading
 import contextlib
@@ -18,7 +17,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt', help='Path to map file')
 #parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -40,7 +39,7 @@ FPS = 40
 
 total_travel_length = 0
 coverage_length, retreat_length, advance_length = 0, 0, 0
-return_charge_count = 1
+return_charge_count = 0
 count_cell_go_through = 1
 deadlock_count = 0
 extreme_deadlock_count = 0
@@ -68,14 +67,14 @@ def check_valid_pos(pos):
 
 
 class Robot:
-    def __init__(self, battery_pos, map_row_count, map_col_count):
+    def __init__(self, initial_battery_pos, map_row_count, map_col_count):
         self.logic = Logic(map_row_count, map_col_count, grid_map=ui)
         '''
         map:
             'u': unvisited
             'e': explored
             'o': obstacle (static)
-            'd': dynamic obstacle (new)
+            'd': dynamic obstacle 
         '''
         self.mode = "NORMAL"  # chế độ mặc định ban đầu
         self.map = None
@@ -84,8 +83,7 @@ class Robot:
         # The angle between the robot direction and left to right axis in rad [0, 2pi)
         # (up direction at the start)
         self.angle = math.pi / 2
-
-        self.battery_pos = battery_pos
+        self.battery_pos = initial_battery_pos
         self.energy = ENERGY_CAPACITY
         self.estimated_return_energy = 0
 
@@ -124,7 +122,8 @@ class Robot:
             for y in range(len(environment[0])):
                 if environment[x, y] == 1:
                     self.map[x, y] = 'o'
-
+                else:
+                    self.map[x, y] = 0
         self.logic.set_weight_map(environment)
 
     def run(self):
@@ -687,7 +686,8 @@ class Robot:
 
         return False
 def main():
-    global dynamic_obstacles  # Khai báo global
+    global dynamic_obstacles
+    dynamic_obstacles = None
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
@@ -701,6 +701,10 @@ def main():
 
     # Khởi tạo các vật cản manual từ grid_map only if
     if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
+        # Mark all manual obstacles as hidden initially
+        for obstacle in ui.dynamic_obstacles:
+            obstacle['hidden'] = True
+            obstacle['discovered'] = False  # Robot hasn't found it yet
         dynamic_obstacles.initialize_obstacles()
         print(f"Initialized {len(ui.dynamic_obstacles)} manual dynamic obstacles")
     print("Using BWave Framework with Dynamic Obstacles")
@@ -715,34 +719,33 @@ def main():
     robot.run()
 
     print('\nCoverage:\t', coverage_length)
-    print('Retreat:\t', retreat_length)
     print('Advance:\t', advance_length)
+    print('Return:\t', retreat_length)
     print('-' * 8)
+    print('Total Path Length:', total_travel_length)
     print('Total:', total_travel_length)
     print('Time: ', execute_time)
 
     # ===== BWave Framework Metrics (theo đúng Paper) =====
-    print('\n' + '=' * 50)
-    print('BWAVE FRAMEWORK METRICS')
     print('=' * 50)
 
-    # 1. Total Path Length (đã có)
+    # 1. Total Path Length (fixed terminology)
     print(f'1. Total Path Length: {total_travel_length:.2f}')
 
-    # 2. Overlap Rate (theo công thức BWave paper)
+    # 2. Overlap Rate (already correct)
     if total_free_cells > 0:
         bwave_overlap_rate = (total_coverage_cells / total_free_cells - 1) * 100
         print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')
     else:
         print('2. Overlap Rate: 0.00%')
 
-    # 3. Number of Returns
+    # 3. Number of Returns (fixed from 1 to 0 initial)
     print(f'3. Number of Returns: {return_charge_count}')
 
-    # 4. Number of Deadlocks (total và extreme)
+    # 4. Number of Deadlocks (already correct)
     print(f'4. Number of Deadlocks: {deadlock_count} (extreme: {extreme_deadlock_count})')
 
-    # 5. Execution Time
+    # 5. Execution Time (already correct)
     print(f'5. Execution Time: {execute_time:.3f}s')
 
     print('=' * 50)

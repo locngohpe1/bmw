@@ -122,12 +122,7 @@ class Grid_Map:
                                 }
 
                                 self.dynamic_obstacles.append(dynamic_obstacle)
-
-                                # Đánh dấu toàn bộ khối lên bản đồ
-                                for dr, dc in shape:
-                                    r, c = row + dr, col + dc
-                                    if 0 <= r < self.row_count and 0 <= c < self.col_count:
-                                        self.map[r][c] = 'd'
+                                dynamic_obstacle['hidden'] = True
 
                         else:  # normal left click: static obstacle
                             draw_obstacle = True

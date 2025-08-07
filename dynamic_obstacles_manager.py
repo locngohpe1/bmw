@@ -16,7 +16,7 @@ class DynamicObstaclesManager:
 
         # đoạn code sửa
         self.human_icon = pg.image.load('assets/human_icon2.png')  # Load icon người
-        self.human_icon = pg.transform.scale(self.human_icon, (24, 32))  # Resize icon
+        self.human_icon = pg.transform.scale(self.human_icon, (16, 26))  # Resize icon
 
         # Không tự khởi tạo vật cản động nữa
         # self.initialize_obstacles()
@@ -35,7 +35,7 @@ class DynamicObstaclesManager:
                 )
 
                 # Đảm bảo vận tốc base không quá nhỏ
-                max_attempts = 10
+                max_attempts = 30
                 attempt = 0
                 while (abs(base_velocity[0]) < 0.02 and abs(base_velocity[1]) < 0.02) and attempt < max_attempts:
                     base_velocity = (
@@ -93,6 +93,7 @@ class DynamicObstaclesManager:
                         0 <= col < len(self.grid_map.map[0]) and
                         self.grid_map.map[row, col] not in (1, 'o', 'e')):
                     self.grid_map.map[row, col] = 'd'
+    pass
 
     def update(self, delta_time):
         """Cập nhật vị trí vật cản động theo thời gian"""
@@ -159,10 +160,6 @@ class DynamicObstaclesManager:
             draw_x = int(x + (self.epsilon - icon_w) / 2)
             draw_y = int(y + (self.epsilon - icon_h) / 2)
             surface.blit(self.human_icon, (draw_x, draw_y))
-            # Vẽ ID để debug (optional)
-            # font = pg.font.Font(None, 16)
-            # text = font.render(obstacle['id'], True, (255, 255, 255))
-            # surface.blit(text, (center_x - 10, center_y - 5))
 
     def get_obstacle_info(self, obstacle_id):
         """Get thông tin chi tiết của vật cản theo ID"""
