@@ -78,7 +78,7 @@ class DynamicObstaclesManager:
                 if (0 <= row < len(self.grid_map.map) and
                         0 <= col < len(self.grid_map.map[0]) and
                         self.grid_map.map[row, col] == 'd'):
-                    self.grid_map.map[row, col] = 0
+                    self.grid_map.map[row, col] = 0  # Keep as 0 for grid_map (UI)
 
     def _mark_obstacle_cells(self, center_pos, size, force_mark=False):
         """Mark cells as 'd' only if obstacle is discovered or force_mark=True"""

@@ -18,7 +18,6 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
 parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
-#parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
@@ -30,7 +29,6 @@ ENERGY_CAPACITY = args.energy
 ui = Grid_Map()
 ui.read_map(args.map)
 ENVIRONMENT, battery_pos = ui.edit_map()
-# ui.save_map('map/empty_map.txt')
 
 ROW_COUNT = len(ENVIRONMENT)
 COL_COUNT = len(ENVIRONMENT[0])
@@ -43,11 +41,12 @@ return_charge_count = 0
 count_cell_go_through = 1
 deadlock_count = 0
 extreme_deadlock_count = 0
-dynamic_wait_count = 0  # Đếm số lần robot phải chờ do vật cản động
-dynamic_obstacles = None  # Global reference cho dynamic obstacles manager
+dynamic_wait_count = 0
+dynamic_obstacles = None
 execute_time = time.time()
-total_coverage_cells = 0  # Tổng số cells đã được coverage (có thể overlap)
-total_free_cells = 0     # Tổng số free cells trong environment
+total_coverage_cells = 0
+total_free_cells = 0
+
 # Find special area
 from optimization import get_special_area
 
@@ -76,7 +75,7 @@ class Robot:
             'o': obstacle (static)
             'd': dynamic obstacle 
         '''
-        self.mode = "NORMAL"  # chế độ mặc định ban đầu
+        self.mode = "NORMAL"
         self.map = None
         self.current_pos = battery_pos
 
@@ -105,14 +104,14 @@ class Robot:
         self.waiting = False
         self.wait_time = 0
         self.wait_start_time = 0
-        self.wait_reason = ""  # Lý do chờ đợi để hiển thị
+        self.wait_reason = ""
 
         # Previous camera image for motion detection
         self.previous_camera_image = None
 
         # Essential tracking only
         self.total_moves = 0
-        self.detected_positions = set()  # Cần thiết cho detect_and_classify_obstacles
+        self.detected_positions = set()
 
         # Thread safety lock
         self._update_lock = threading.Lock()
@@ -126,7 +125,8 @@ class Robot:
                 if environment[x, y] == 1:
                     self.map[x, y] = 'o'
                 else:
-                    self.map[x, y] = 0
+                    self.map[x, y] = 'u'
+
         self.logic.set_weight_map(environment)
 
     def run(self):
@@ -265,6 +265,9 @@ class Robot:
                         dynamic_wait_count += 1
                         continue
                     self.move_to(selected_cell)
+                    # ✅ ALWAYS TASK AFTER MOVING TO A CELL
+                    if self.map[self.current_pos] == 'u':  # Only task unvisited cells
+                        self.task()
 
                 # Deadlock state
                 elif self.logic.state == Q.DEADLOCK:
@@ -303,10 +306,10 @@ class Robot:
     def task(self):
         global total_coverage_cells
         current_pos = self.current_pos
-        self.map[current_pos] = 'e'
+        self.map[current_pos] = 'e'  # ✅ UPDATE ROBOT.MAP
         self.logic.update_explored(current_pos)
-        ui.task(current_pos)
-        total_coverage_cells += 1  # Đếm mỗi lần task (coverage)
+        ui.task(current_pos)  # Update UI
+        total_coverage_cells += 1
 
     def move_to(self, pos):
         global total_travel_length, coverage_length, retreat_length, advance_length
@@ -329,6 +332,13 @@ class Robot:
         if self.move_status == 0:
             ui.move_to(pos)
             coverage_length += dist
+            # ✅ AUTO TASK when moving to unvisited cell during coverage
+            if self.map[pos] == 'u':
+                self.map[pos] = 'e'
+                self.logic.update_explored(pos)
+                ui.task(pos)
+                global total_coverage_cells
+                total_coverage_cells += 1
         elif self.move_status == 1:
             ui.move_retreat(pos)
             retreat_length += dist
@@ -359,7 +369,6 @@ class Robot:
     def rotate_to(self, pos_to):
         self.angle = self.get_angle(pos_to)
 
-
     def check_enough_energy(self, wp):
         return_dist_from_wp = return_matrix[wp][1]
         basic_energy = math.dist(self.current_pos, wp) + 0.5 * return_dist_from_wp
@@ -375,7 +384,6 @@ class Robot:
         dynamic_detour_buffer = basic_energy * 0.2
         total_expected_energy = basic_energy + waiting_energy_buffer + dynamic_detour_buffer
         return self.energy >= total_expected_energy
-
 
     def _get_path_cells(self, start, end):
         """Estimate cells on direct path"""
@@ -438,11 +446,6 @@ class Robot:
         clock = pg.time.Clock()  # giới hạn tốc độ vòng lặp nếu cần
 
         for pos in path:
-            print(f"\n🔁 [RETREAT STEP] Next pos: {pos}, energy left: {self.energy:.2f}")
-
-            if self.map[pos] == 'd':
-                print(f"⚠️  Cell {pos} is marked as dynamic obstacle in map")
-
             # Cập nhật vật cản động mỗi bước
             delta_time = clock.get_time() / 1000.0
             dynamic_obstacles.update(delta_time)
@@ -454,7 +457,8 @@ class Robot:
                 else:
                     print(f"⚠️ Not enough energy during advance at {pos} — emergency return")
                     return  # PREVENT INFINITE RECURSION
-                # Apply waiting rule if dynamic obstacles present
+
+            # Apply waiting rule if dynamic obstacles present
             while self.check_dynamic_collision(pos):
                 delta_time = clock.tick(FPS) / 1000.0  # cập nhật đúng mỗi frame
                 dynamic_obstacles.update(delta_time)
@@ -598,7 +602,6 @@ class Robot:
                     print(f"⚠️ Low confidence detection ignored: {confidence:.3f}")
         self.previous_camera_image = current_image
 
-
     def check_dynamic_collision(self, target_pos):
         """Unified collision check với consistent state management"""
 
@@ -668,7 +671,7 @@ class Robot:
             else:
                 # Clean up stale dynamic marking
                 if check_valid_pos(target_pos) and self.map[target_pos] == 'd':
-                    self.map[target_pos] = 0
+                    self.map[target_pos] = 'u'
                     print(f"🧹 Cleaned up stale dynamic marking at {target_pos}")
                 return False
 
@@ -714,16 +717,18 @@ class Robot:
 
         return False
 
+
 def main():
     global dynamic_obstacles
     dynamic_obstacles = None
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
+
     # Tính tổng số free cells (S_free) trong environment TRƯỚC KHI TẠO DYNAMIC OBSTACLES
     global total_free_cells, ORIGINAL_ENVIRONMENT
     ORIGINAL_ENVIRONMENT = np.copy(ENVIRONMENT)  # Backup original environment
-    total_free_cells = np.sum(ORIGINAL_ENVIRONMENT == 0)  # Đếm cells = 0 ban đầu
+    total_free_cells = np.sum(ORIGINAL_ENVIRONMENT == 0)  # Include charging station
     print(f"Total free cells in ORIGINAL environment: {total_free_cells}")
 
     # Khởi tạo trình quản lý vật cản động với manual obstacles từ ui
@@ -789,13 +794,15 @@ def main():
                 covered_cells += 1
 
     if total_free_cells > 0:
+        coverage_rate = (covered_cells / total_free_cells) * 100.0
         uncovered_cells = total_free_cells - covered_cells
-        coverage_rate = 100.0 - (uncovered_cells / total_free_cells) * 100.0
         print(f'6. Coverage Rate: {coverage_rate:.2f}%')
         print(f'   └─ Covered: {covered_cells}, Total free: {total_free_cells}, Uncovered: {uncovered_cells}')
     else:
         print(f'6. Coverage Rate: 0.00%')
 
     print('=' * 50)
+
+
 if __name__ == "__main__":
     main()
