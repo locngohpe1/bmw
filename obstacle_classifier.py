@@ -41,21 +41,28 @@ class ObstacleClassifier:
 
     def classify(self, image):
         """Phân loại vật cản là tĩnh hay động từ hình ảnh"""
-        if isinstance(image, np.ndarray):
-            # Chuyển từ mảng numpy sang PIL Image
-            image = Image.fromarray(image.astype('uint8'))
+        try:
+            if isinstance(image, np.ndarray):
+                image = Image.fromarray(image.astype('uint8'))
 
-        img = self.transform(image).unsqueeze(0).to(self.device)
+            img = self.transform(image).unsqueeze(0).to(self.device)
 
-        with torch.no_grad():
-            outputs = self.model(img)
-            _, predicted = torch.max(outputs, 1)
-            probabilities = torch.nn.functional.softmax(outputs, dim=1)[0]
+            with torch.no_grad():
+                outputs = self.model(img)
+                _, predicted = torch.max(outputs, 1)
+                probabilities = torch.nn.functional.softmax(outputs, dim=1)[0]
 
-        class_name = self.classes[predicted.item()]
-        confidence = probabilities[predicted.item()].item()
+            class_name = self.classes[predicted.item()]
+            confidence = probabilities[predicted.item()].item()
 
-        return class_name, confidence
+            return class_name, confidence
+
+        except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
+            print(f"AI model error: {e}, falling back to 'static' classification")
+            return 'static', 0.5  # Conservative fallback
+        except Exception as e:
+            print(f"Unexpected classification error: {e}")
+            return 'static', 0.0
 
     def detect_and_classify_from_image(self, image, confidence_threshold=0.7):
         """

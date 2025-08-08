@@ -14,12 +14,9 @@ class DynamicObstaclesManager:
         self.next_id = 1
         self.speed_factor = speed_factor
 
-        # đoạn code sửa
-        self.human_icon = pg.image.load('assets/human_icon2.png')  # Load icon người
-        self.human_icon = pg.transform.scale(self.human_icon, (16, 26))  # Resize icon
-
-        # Không tự khởi tạo vật cản động nữa
-        # self.initialize_obstacles()
+        # Load human icon for visualization
+        self.human_icon = pg.image.load('assets/human_icon2.png')
+        self.human_icon = pg.transform.scale(self.human_icon, (16, 26))
 
     def initialize_obstacles(self):
         """Khởi tạo vật cản động từ danh sách manual từ grid_map"""
@@ -64,9 +61,12 @@ class DynamicObstaclesManager:
                 }
 
                 self.obstacles.append(obstacle)
-                self._mark_obstacle_cells(pos, obstacle['size'])
+                # Only mark non-hidden obstacles on map
+                if not manual_obs.get('hidden', False):
+                    self._mark_obstacle_cells(pos, obstacle['size'], force_mark=True)
+                else:
+                    print(f"🔒 Created HIDDEN obstacle {obstacle['id']} at {pos} - not marking map")
                 self.next_id += 1
-
         print(f"Created {len(self.obstacles)} manual dynamic obstacles")
 
     def _clear_obstacle_cells(self, center_pos, size):
@@ -80,25 +80,54 @@ class DynamicObstaclesManager:
                         self.grid_map.map[row, col] == 'd'):
                     self.grid_map.map[row, col] = 0
 
-    def _mark_obstacle_cells(self, center_pos, size):
+    def _mark_obstacle_cells(self, center_pos, size, force_mark=False):
+        """Mark cells as 'd' only if obstacle is discovered or force_mark=True"""
         if isinstance(size, tuple):
             max_dim = max(size)
         else:
             max_dim = size
         radius = int(max_dim / 2)
+
         for dr in range(-radius, radius + 1):
             for dc in range(-radius, radius + 1):
                 row, col = center_pos[0] + dr, center_pos[1] + dc
                 if (0 <= row < len(self.grid_map.map) and
                         0 <= col < len(self.grid_map.map[0]) and
                         self.grid_map.map[row, col] not in (1, 'o', 'e')):
-                    self.grid_map.map[row, col] = 'd'
+
+                    # ✅ ONLY mark 'd' if discovered or forced
+                    if force_mark:
+                        self.grid_map.map[row, col] = 'd'
     pass
+
+    def discover_obstacle(self, obstacle_id):
+        """AI discovered a hidden obstacle - mark it on map"""
+        for obstacle in self.obstacles:
+            if obstacle['id'] == obstacle_id and obstacle.get('hidden', False):
+                obstacle['hidden'] = False
+                obstacle['discovered'] = True
+                pos = obstacle['pos']
+                size = obstacle['size']
+
+                # Now mark on map
+                self._mark_obstacle_cells(pos, size, force_mark=True)
+                print(f"🔍 FIRST DISCOVERY: AI found dynamic obstacle {obstacle_id} at {pos}!")
+                return True
+        return False
+
+    def get_obstacle_by_position(self, pos):
+        """Get obstacle at given position"""
+        for obstacle in self.obstacles:
+            obstacle_pos = obstacle['pos']
+            distance = abs(obstacle_pos[0] - pos[0]) + abs(obstacle_pos[1] - pos[1])
+            if distance <= 1:  # Within 1 cell distance
+                return obstacle
+        return None
 
     def update(self, delta_time):
         """Cập nhật vị trí vật cản động theo thời gian"""
         if not self.obstacles:
-            return  # Không có vật cản động để cập nhật
+            return
 
         map_width = len(self.grid_map.map[0])
         map_height = len(self.grid_map.map)
@@ -147,7 +176,9 @@ class DynamicObstaclesManager:
 
             if old_pos != obstacle['pos']:
                 self._clear_obstacle_cells(old_pos, size)
-                self._mark_obstacle_cells(obstacle['pos'], size)
+                # Only mark if not hidden
+                if not obstacle.get('hidden', False):
+                    self._mark_obstacle_cells(obstacle['pos'], size, force_mark=True)
                 size_str = str(size)
                 print(f"Dynamic obstacle {obstacle['id']} (size={size_str}) moved to {obstacle['pos']}")
 
@@ -170,6 +201,8 @@ class DynamicObstaclesManager:
 
     def get_all_obstacle_positions(self):
         """Trả về tất cả vị trí của các vật cản động"""
+        if not self.obstacles:
+            return []
         positions = []
         for obstacle in self.obstacles:
             # Trả về tất cả cells mà vật cản chiếm

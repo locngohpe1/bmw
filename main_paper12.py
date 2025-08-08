@@ -114,6 +114,9 @@ class Robot:
         self.total_moves = 0
         self.detected_positions = set()  # Cần thiết cho detect_and_classify_obstacles
 
+        # Thread safety lock
+        self._update_lock = threading.Lock()
+
     def set_map(self, environment):
         row_count, col_count = len(environment), len(environment[0])
         self.map = np.full((row_count, col_count), 'u')
@@ -137,8 +140,8 @@ class Robot:
         last_time = time.time()
 
         while run:
-            # ✅ LOCK mechanism cho thread safety
-            with threading.Lock() if hasattr(self, '_update_lock') else contextlib.nullcontext():
+            # Thread safety lock
+            with self._update_lock:
                 # Tính delta time cho vật cản động
                 current_time = time.time()
                 delta_time = current_time - last_time
@@ -148,12 +151,13 @@ class Robot:
                 obstacle_snapshot = self._get_obstacle_snapshot()
 
                 # Cập nhật vật cản động với snapshot
-                dynamic_obstacles.update(delta_time)
+                if dynamic_obstacles is not None:
+                    dynamic_obstacles.update(delta_time)
 
             ui.draw()
 
             # Vẽ thêm vật cản động nếu có
-            if 'dynamic_obstacles' in globals():
+            if 'dynamic_obstacles' in globals() and dynamic_obstacles is not None:
                 dynamic_obstacles.draw(ui.WIN)
             pg.display.flip()
 
@@ -250,19 +254,19 @@ class Robot:
             if selected_cell == self.current_pos:
                 self.task()
             else:
-                # CP 0
+                # Normal coverage state
                 if self.logic.state == Q.NORMAL:
-                    # ✅ ENERGY CHECK TRƯỚC - Logic đúng
+                    # Check energy before movement
                     if self.check_enough_energy(selected_cell) == False:
                         self.charge_planning()
                         continue
-                    # ✅ SAU ĐÓ MỚI CHECK COLLISION
+                    # Check dynamic collision
                     if self.check_dynamic_collision(selected_cell):
                         dynamic_wait_count += 1
                         continue
                     self.move_to(selected_cell)
 
-                # CP l (l > 0)
+                # Deadlock state
                 elif self.logic.state == Q.DEADLOCK:
                     path, dist = self.logic.cache_path, self.logic.cache_dist
                     print(f"Deadlock ({round(dist, 2)})")
@@ -360,18 +364,15 @@ class Robot:
         return_dist_from_wp = return_matrix[wp][1]
         basic_energy = math.dist(self.current_pos, wp) + 0.5 * return_dist_from_wp
 
-        # ✅ THÊM: Estimate waiting energy cost for dynamic obstacles
+        # Estimate waiting energy cost for dynamic obstacles
         waiting_energy_buffer = 0
-
-        # Check potential dynamic obstacles on path to wp
         path_cells = self._get_path_cells(self.current_pos, wp)
         for cell in path_cells:
             if hasattr(self, 'map') and self.map[cell] == 'd':
-                waiting_energy_buffer += 2.0  # Energy cost for potential waiting
+                waiting_energy_buffer += 2.0
 
-        # ✅ THÊM: Buffer cho potential detours
-        dynamic_detour_buffer = basic_energy * 0.2  # 20% buffer for detours
-
+        # Buffer for potential detours (20%)
+        dynamic_detour_buffer = basic_energy * 0.2
         total_expected_energy = basic_energy + waiting_energy_buffer + dynamic_detour_buffer
         return self.energy >= total_expected_energy
 
@@ -453,7 +454,7 @@ class Robot:
                     return
                 else:
                     self.charge_planning()
-            # Áp dụng waiting rule nếu có vật cản động
+                # Apply waiting rule if dynamic obstacles present
             while self.check_dynamic_collision(pos):
                 delta_time = clock.tick(FPS) / 1000.0  # cập nhật đúng mỗi frame
                 dynamic_obstacles.update(delta_time)
@@ -563,6 +564,13 @@ class Robot:
                     pos_key = (abs_row, abs_col)
 
                     if class_name == 'dynamic' and pos_key not in self.detected_positions:
+                        # ✅ CHECK: Is this a first-time discovery?
+                        hidden_obstacle = dynamic_obstacles.get_obstacle_by_position(pos_key)
+                        if hidden_obstacle and hidden_obstacle.get('hidden', False):
+                            # 🎯 FIRST DISCOVERY!
+                            dynamic_obstacles.discover_obstacle(hidden_obstacle['id'])
+                            self.detected_positions.add(pos_key)
+                            print(f"🎉 RESEARCH ACHIEVEMENT: Robot DISCOVERED hidden obstacle via AI!")
                         # Mark as discovered dynamic obstacle
                         self.map[pos_key] = 'd'
                         # Mark obstacle as discovered in simulation
@@ -592,15 +600,22 @@ class Robot:
     def check_dynamic_collision(self, target_pos):
         """Unified collision check với consistent state management"""
 
-        # ✅ STEP 1: GoogLeNet classification (ground truth)
+        # Step 1: GoogLeNet classification
         obstacle_roi = self.virtual_camera.capture_obstacle_roi(target_pos, (2, 2))
         class_name, confidence = self.obstacle_classifier.classify(obstacle_roi)
-
         print(f"🔍 Real-time GoogLeNet: {target_pos} -> {class_name} ({confidence:.3f})")
 
-        # ✅ STEP 2: Update map state based on AI classification
+        # Step 2: Update map state based on AI classification
         if confidence > 0.75:  # High confidence threshold
             if class_name == 'dynamic':
+                # ✅ CHECK: First discovery of hidden obstacle?
+                if self.map[target_pos] != 'd':
+                    hidden_obstacle = dynamic_obstacles.get_obstacle_by_position(target_pos)
+                    if hidden_obstacle and hidden_obstacle.get('hidden', False):
+                        # 🎯 FIRST DISCOVERY via collision check!
+                        dynamic_obstacles.discover_obstacle(hidden_obstacle['id'])
+                        print(f"🔍 COLLISION DISCOVERY: Found hidden obstacle at {target_pos}!")
+
                 self.map[target_pos] = 'd'  # Update map to dynamic
                 self.classified_obstacles[target_pos] = ('dynamic', confidence)
             elif class_name == 'static':
@@ -630,6 +645,11 @@ class Robot:
                     break
 
             if is_real_dynamic:
+                # ✅ DISCOVERY CHECK: First time encountering this obstacle?
+                if obstacle.get('hidden', False):
+                    dynamic_obstacles.discover_obstacle(obstacle['id'])
+                    print(f"🎯 COLLISION-TRIGGERED DISCOVERY: {obstacle['id']} at {target_pos}!")
+
                 obstacle_size = obstacle.get('size', 1.0)
                 if isinstance(obstacle_size, tuple):
                     obstacle_size = max(obstacle_size)
@@ -713,6 +733,8 @@ def main():
             obstacle['discovered'] = False  # Robot hasn't found it yet
         dynamic_obstacles.initialize_obstacles()
         print(f"Initialized {len(ui.dynamic_obstacles)} manual dynamic obstacles")
+    # ✅ CLEAR VISUAL MARKERS when robot starts to run
+    ui.clear_visual_markers()
     print("Using BWave Framework with Dynamic Obstacles")
     print(f"GPU available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
@@ -753,6 +775,22 @@ def main():
 
     # 5. Execution Time (already correct)
     print(f'5. Execution Time: {execute_time:.3f}s')
+
+    # 6. Coverage Rate
+    covered_cells = 0
+    # Count coverage on original free space cells only
+    for row in range(len(ENVIRONMENT)):
+        for col in range(len(ENVIRONMENT[0])):
+            if ENVIRONMENT[row, col] == 0 and robot.map[row, col] == 'e':
+                covered_cells += 1
+
+    if total_free_cells > 0:
+        uncovered_cells = total_free_cells - covered_cells
+        coverage_rate = 100.0 - (uncovered_cells / total_free_cells) * 100.0
+        print(f'6. Coverage Rate: {coverage_rate:.2f}%')
+        print(f'   └─ Covered: {covered_cells}, Total free: {total_free_cells}, Uncovered: {uncovered_cells}')
+    else:
+        print(f'6. Coverage Rate: 0.00%')
 
     print('=' * 50)
 
