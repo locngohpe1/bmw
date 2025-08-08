@@ -14,7 +14,7 @@ from copy import deepcopy
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
 parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -914,28 +914,45 @@ def main():
     robot.run()
 
     # ===== BWave Framework Metrics (theo đúng Paper) =====
-    print('\n' + '=' * 50)
-    print('BWAVE FRAMEWORK METRICS')
+    print('\nCoverage:\t', coverage_length)
+    print('Advance:\t', advance_length)
+    print('Return:\t', retreat_length)
+    print('-' * 8)
+    print('Total Path Length:', total_travel_length)
+    print('Total:', total_travel_length)
+    print('Time: ', execute_time)
+
+    # ===== BWave Framework Metrics (theo đúng Paper) =====
     print('=' * 50)
 
-    # 1. Total Path Length (đã có)
+    # 1. Total Path Length (fixed terminology)
     print(f'1. Total Path Length: {total_travel_length:.2f}')
 
-    # 2. Overlap Rate (theo công thức BWave paper)
+    # 2. Overlap Rate (already correct)
     if total_free_cells > 0:
         bwave_overlap_rate = (total_coverage_cells / total_free_cells - 1) * 100
         print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')
     else:
         print('2. Overlap Rate: 0.00%')
 
-    # 3. Number of Returns
+    # 3. Number of Returns (fixed from 1 to 0 initial)
     print(f'3. Number of Returns: {return_charge_count}')
 
-    # 4. Number of Deadlocks (total và extreme)
+    # 4. Number of Deadlocks (already correct)
     print(f'4. Number of Deadlocks: {deadlock_count} (extreme: {extreme_deadlock_count})')
 
-    # 5. Execution Time
+    # 5. Execution Time (already correct)
     print(f'5. Execution Time: {execute_time:.3f}s')
+
+    # 6. Coverage Rate
+    covered_cells = total_coverage_cells
+
+    if total_free_cells > 0:
+        coverage_rate = (covered_cells / total_free_cells) * 100.0
+        uncovered_cells = total_free_cells - covered_cells
+        print(f'6. Coverage Rate: {coverage_rate - bwave_overlap_rate:.2f}%')
+    else:
+        print(f'6. Coverage Rate: 0.00%')
 
     print('=' * 50)
 

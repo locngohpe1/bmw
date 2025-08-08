@@ -5,11 +5,11 @@ import pygame as pg
 import time
 from copy import deepcopy
 
-from a_star_projectB import GridMapGraph, a_star_search
-from dynamic_obstacle_projectB import DynamicObstacle
-from dynamic_obstacle_random_projectB import DynamicObstacleRandom
-from logic_projectB import LogicAlgorithm, Q
-from grid_map_projectB import Grid_Map
+from .a_star_projectB import GridMapGraph, a_star_search
+from .dynamic_obstacle_projectB import DynamicObstacle
+from .dynamic_obstacle_random_projectB import DynamicObstacleRandom
+from .logic_projectB import LogicAlgorithm, Q
+from .grid_map_projectB import Grid_Map
 
 VISION_SENSOR_RANGE = 5
 

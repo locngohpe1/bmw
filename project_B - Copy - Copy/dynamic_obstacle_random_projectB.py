@@ -1,7 +1,7 @@
 import math
 import numpy as np
 import random
-from dynamic_obstacle_projectB import DynamicObstacle
+from .dynamic_obstacle_projectB import DynamicObstacle
 
 def is_valid_pos(pos, map):
     row_count, col_count = len(map), len(map[0])

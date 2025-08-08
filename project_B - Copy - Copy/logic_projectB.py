@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from collections import deque
-from a_star_projectB import GridMapGraph, a_star_search
+from .a_star_projectB import GridMapGraph, a_star_search
 
 class Q: # State
     START, NORMAL, DEADLOCK, FINISH = range(4)
@@ -64,39 +64,28 @@ class LogicAlgorithm:
     def two_step_aution(self, cur_pos):
         self.state = Q.NORMAL
         cur_neighbours = self.four_neighbours(cur_pos)
-        bid_value = {}
-
-        for cur_nb in cur_neighbours:
-            # Tính threat cho neighbor hiện tại
-            zeta_nb = self.prob_map[cur_nb] if hasattr(self, 'prob_map') else 0
-
-            # Tìm max threat của neighbors của neighbor này
+        bid_value = []
+        for cur_nb, direction_priority in cur_neighbours:
+            zeta_nb = self.calculate_zeta(cur_pos, cur_nb)
             nb_neighbours = self.four_neighbours(cur_nb)
-            max_zeta = 0
-            for nb in nb_neighbours:
+            max_zeta = -1000
+            for nb, dp in nb_neighbours:
                 if nb == cur_pos:
                     continue
-                nb_threat = self.prob_map[nb] if hasattr(self, 'prob_map') else 0
-                max_zeta = max(max_zeta, nb_threat)
-
-            # Tính bid value (inverse của total threat)
-            total_threat = zeta_nb + max_zeta
-            if total_threat == 0:
-                c = 1.0  # High value cho safe area
-            else:
-                c = 1.0 / (1.0 + total_threat * 0.01)  # Scale down threat values
-
-            # Bonus cho unvisited cells
-            if self.weight_map[cur_nb] == 0:
-                c *= 1.5
-
-            bid_value[cur_nb] = c
+                if self.calculate_zeta(cur_nb, nb) > max_zeta:
+                    max_zeta = self.calculate_zeta(cur_nb, nb)
+            if zeta_nb == 0 and max_zeta == 0:
+                c = math.inf
+            else: c = 1 / (zeta_nb + max_zeta)
+            bid_value.append((c, direction_priority, cur_nb))
 
         return bid_value
 
     def get_replan_wp(self, cur_pos):
-        # Sử dụng hàm đã có sẵn two_step_aution thay vì two_step_evaluation
-        bid_value_list = self.two_step_aution(cur_pos)
+        # bid_value_list2 = self.two_step_aution(cur_pos)
+        bid_value_list = self.two_step_evaluation(cur_pos)
+        # bid_value_list = sorted(bid_value_list, key=lambda c: (c[0], 1 / c[1]))
+        # return [(i[0], i[2]) for i in bid_value_list]
         return self.get_score_max(bid_value_list)
 
     def two_step_evaluation(self, cur_pos):  
