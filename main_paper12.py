@@ -226,7 +226,6 @@ class Robot:
                 for obstacle in dynamic_obstacles.obstacles:
                     pos = obstacle['pos']
                     obstacle_id = obstacle['id']
-
                     # Update với size information
                     if obstacle_id not in self.dynamic_obstacle_handler.dynamic_obstacles:
                         self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos,
@@ -459,8 +458,12 @@ class Robot:
                     return  # PREVENT INFINITE RECURSION
 
             # Apply waiting rule if dynamic obstacles present
-            while self.check_dynamic_collision(pos):
-                delta_time = clock.tick(FPS) / 1000.0  # cập nhật đúng mỗi frame
+            collision_attempts = 0
+            max_collision_attempts = 5
+
+            while self.check_dynamic_collision(pos) and collision_attempts < max_collision_attempts:
+                collision_attempts += 1
+                delta_time = clock.tick(FPS) / 1000.0
                 dynamic_obstacles.update(delta_time)
                 ui.draw()
                 dynamic_obstacles.draw(ui.WIN)
@@ -471,19 +474,21 @@ class Robot:
                     ui.WIN.blit(wait_img, (10, 10))
 
                 pg.display.flip()
-                pg.time.delay(100)
+                pg.time.delay(50)  # Reduced delay
 
                 if self.waiting and time.time() - self.wait_start_time >= self.wait_time:
                     self.waiting = False
                     print("✅ Done waiting — will try to move again")
+                    break  # Exit after waiting complete
 
-                if is_retreat:
-                    # Unified timeout handling for both retreat and advance
-                    wait_loops += 1
-                    if wait_loops > max_wait_loops:
-                        phase_name = "Retreat" if is_retreat else "Advance"
-                        print(f"⛔ {phase_name} waiting timeout — skipping this cell")
-                        break
+                wait_loops += 1
+                if wait_loops > max_wait_loops:
+                    phase_name = "Retreat" if is_retreat else "Advance"
+                    print(f"⛔ {phase_name} waiting timeout — skipping this cell")
+                    break
+
+            if collision_attempts >= max_collision_attempts:
+                print(f"⛔ Max collision attempts reached for {pos} — skipping this cell")
 
             # Di chuyển bình thường
             self.move_to(pos)
@@ -786,18 +791,12 @@ def main():
     print(f'5. Execution Time: {execute_time:.3f}s')
 
     # 6. Coverage Rate
-    covered_cells = 0
-    # Count coverage on ORIGINAL free space cells only (before dynamic obstacles)
-    for row in range(len(ORIGINAL_ENVIRONMENT)):
-        for col in range(len(ORIGINAL_ENVIRONMENT[0])):
-            if ORIGINAL_ENVIRONMENT[row, col] == 0 and robot.map[row, col] == 'e':
-                covered_cells += 1
+    covered_cells = total_coverage_cells
 
     if total_free_cells > 0:
         coverage_rate = (covered_cells / total_free_cells) * 100.0
         uncovered_cells = total_free_cells - covered_cells
-        print(f'6. Coverage Rate: {coverage_rate:.2f}%')
-        print(f'   └─ Covered: {covered_cells}, Total free: {total_free_cells}, Uncovered: {uncovered_cells}')
+        print(f'6. Coverage Rate: {coverage_rate-bwave_overlap_rate:.2f}%')
     else:
         print(f'6. Coverage Rate: 0.00%')
 
