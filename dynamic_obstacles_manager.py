@@ -179,8 +179,14 @@ class DynamicObstaclesManager:
                 # Only mark if not hidden
                 if not obstacle.get('hidden', False):
                     self._mark_obstacle_cells(obstacle['pos'], size, force_mark=True)
-                size_str = str(size)
-                print(f"Dynamic obstacle {obstacle['id']} (size={size_str}) moved to {obstacle['pos']}")
+                # CLEAR STALE 'd' MARKINGS from grid_map too
+                for dr in range(-radius, radius + 1):
+                    for dc in range(-radius, radius + 1):
+                        clear_row, clear_col = old_pos[0] + dr, old_pos[1] + dc
+                        if (0 <= clear_row < len(self.grid_map.map) and
+                                0 <= clear_col < len(self.grid_map.map[0]) and
+                                self.grid_map.map[clear_row, clear_col] == 'd'):
+                            self.grid_map.map[clear_row, clear_col] = 0
 
     def draw(self, surface):
         """Vẽ các vật cản động lên bề mặt pygame"""

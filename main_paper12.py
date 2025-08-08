@@ -452,7 +452,8 @@ class Robot:
                     print(f"⚠️ Not enough energy during retreat at {pos} — skipping this step")
                     return
                 else:
-                    self.charge_planning()
+                    print(f"⚠️ Not enough energy during advance at {pos} — emergency return")
+                    return  # PREVENT INFINITE RECURSION
                 # Apply waiting rule if dynamic obstacles present
             while self.check_dynamic_collision(pos):
                 delta_time = clock.tick(FPS) / 1000.0  # cập nhật đúng mỗi frame
@@ -561,7 +562,7 @@ class Robot:
                 print(f"🔍 GoogLeNet Classification: {class_name} (confidence: {confidence:.3f})")
 
                 # Only accept high-confidence predictions
-                if confidence > 0.75:  # Threshold cho accuracy
+                if confidence > 0.6:  # Threshold cho accuracy
                     pos_key = (abs_row, abs_col)
 
                     if class_name == 'dynamic' and pos_key not in self.detected_positions:
@@ -712,16 +713,18 @@ class Robot:
             return True
 
         return False
+
 def main():
     global dynamic_obstacles
     dynamic_obstacles = None
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
-    # Tính tổng số free cells (S_free) trong environment
-    global total_free_cells
-    total_free_cells = np.sum(ENVIRONMENT == 0)  # Đếm số cells = 0 (free space)
-    print(f"Total free cells in environment: {total_free_cells}")
+    # Tính tổng số free cells (S_free) trong environment TRƯỚC KHI TẠO DYNAMIC OBSTACLES
+    global total_free_cells, ORIGINAL_ENVIRONMENT
+    ORIGINAL_ENVIRONMENT = np.copy(ENVIRONMENT)  # Backup original environment
+    total_free_cells = np.sum(ORIGINAL_ENVIRONMENT == 0)  # Đếm cells = 0 ban đầu
+    print(f"Total free cells in ORIGINAL environment: {total_free_cells}")
 
     # Khởi tạo trình quản lý vật cản động với manual obstacles từ ui
     dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=0, speed_factor=args.speed)
@@ -779,10 +782,10 @@ def main():
 
     # 6. Coverage Rate
     covered_cells = 0
-    # Count coverage on original free space cells only
-    for row in range(len(ENVIRONMENT)):
-        for col in range(len(ENVIRONMENT[0])):
-            if ENVIRONMENT[row, col] == 0 and robot.map[row, col] == 'e':
+    # Count coverage on ORIGINAL free space cells only (before dynamic obstacles)
+    for row in range(len(ORIGINAL_ENVIRONMENT)):
+        for col in range(len(ORIGINAL_ENVIRONMENT[0])):
+            if ORIGINAL_ENVIRONMENT[row, col] == 0 and robot.map[row, col] == 'e':
                 covered_cells += 1
 
     if total_free_cells > 0:
@@ -794,6 +797,5 @@ def main():
         print(f'6. Coverage Rate: 0.00%')
 
     print('=' * 50)
-
 if __name__ == "__main__":
     main()
