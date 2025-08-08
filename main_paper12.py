@@ -17,7 +17,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
 #parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -417,10 +417,9 @@ class Robot:
     def retreat(self):
         return_path = get_return_path(return_matrix, self.current_pos)
         self.cache_path = return_path  # save for reuse in advance path
-
         self.move_status = 1
         ui.set_charge_path(return_path)
-        self.follow_path_plan(return_path, time_delay=0.05)
+        self.follow_path_plan(return_path, time_delay=0.05, check_energy=True)
 
     def charge(self):
         self.move_status = 2
@@ -430,12 +429,12 @@ class Robot:
         self.move_status = 3
         advance_path = list(reversed(self.cache_path))
         ui.set_charge_path(advance_path)
-        self.follow_path_plan(advance_path, time_delay=0.05)
+        self.follow_path_plan(advance_path, time_delay=0.05, check_energy=True)
 
     def follow_path_plan(self, path, time_delay=0, check_energy=False, stop_on_unexpored=False):
         is_retreat = self.mode == "RETREAT"
         wait_loops = 0
-        max_wait_loops = 50
+        max_wait_loops = 50 if is_retreat else 30  # Dynamic timeout: retreat gets higher priority
         clock = pg.time.Clock()  # giới hạn tốc độ vòng lặp nếu cần
 
         for pos in path:
@@ -474,9 +473,11 @@ class Robot:
                     print("✅ Done waiting — will try to move again")
 
                 if is_retreat:
+                    # Unified timeout handling for both retreat and advance
                     wait_loops += 1
                     if wait_loops > max_wait_loops:
-                        print("⛔ Retreat waiting timeout — skipping this cell")
+                        phase_name = "Retreat" if is_retreat else "Advance"
+                        print(f"⛔ {phase_name} waiting timeout — skipping this cell")
                         break
 
             # Di chuyển bình thường
