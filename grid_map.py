@@ -122,13 +122,11 @@ class Grid_Map:
                                 }
 
                                 self.dynamic_obstacles.append(dynamic_obstacle)
-
-                                # Đánh dấu toàn bộ khối lên bản đồ
+                                # UI/UX: Đánh dấu vị trí spawn của dynamic obstacle (chỉ visual)
                                 for dr, dc in shape:
                                     r, c = row + dr, col + dc
                                     if 0 <= r < self.row_count and 0 <= c < self.col_count:
-                                        self.map[r][c] = 'd'
-
+                                        self.map[r][c] = 's'  # 's' = spawn marker (temporary visual)
                         else:  # normal left click: static obstacle
                             draw_obstacle = True
                     if mouse_pressed[2]:  # right mouse click: starting position
@@ -202,6 +200,8 @@ class Grid_Map:
                     color = BLACK
                 elif self.map[row][col] == 'd':  # dynamic obstacle
                     color = RED
+                elif self.map[row][col] == 's':  # spawn marker
+                    color = (255, 100, 100)  # Light red for spawn position
                 elif self.map[row][col] == '_':
                     color = GREY
                 elif self.map[row][col] == 'e':

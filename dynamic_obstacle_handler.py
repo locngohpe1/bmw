@@ -158,64 +158,78 @@ class DynamicObstacleHandler:
         return False, None
 
     def apply_waiting_rule(self, robot_pos, robot_direction, robot_speed):
-        """Áp dụng waiting rule cho robot"""
-        min_time_to_collision = float('inf')
-        collision_point = None
-        colliding_obstacle = None
+        """Áp dụng waiting rule """
+        min_collision_time = float('inf')
+        collision_info = None
 
-        # Kiểm tra va chạm với tất cả vật cản động
         for obstacle_id, obstacle in self.dynamic_obstacles.items():
-            will_collide, collision_info = self.predict_collision(
-                robot_pos, robot_direction, robot_speed, obstacle_id)
+            obstacle_pos = obstacle['position']
+            obstacle_vel = obstacle['velocity']
 
-            if will_collide:
-                intersection_point, t_closest = collision_info
+            # Tính vector từ robot đến obstacle
+            rel_pos = (obstacle_pos[0] - robot_pos[0], obstacle_pos[1] - robot_pos[1])
+            d = math.sqrt(rel_pos[0]**2 + rel_pos[1]**2)
 
-                if t_closest < min_time_to_collision:
-                    min_time_to_collision = t_closest
-                    collision_point = intersection_point
-                    colliding_obstacle = obstacle_id
+            if d < 0.1:  # Too close
+                continue
 
-        if collision_point is not None:
-            # Tính toán thời gian cần chờ và vị trí dừng
-            distance_to_stop = min_time_to_collision * robot_speed * 0.7  # Dừng trước điểm va chạm
-
-            # Đơn vị hóa vector hướng
-            dir_norm = math.sqrt(robot_direction[0] ** 2 + robot_direction[1] ** 2)
+            # Normalize robot direction
+            dir_norm = math.sqrt(robot_direction[0]**2 + robot_direction[1]**2)
             if dir_norm < 1e-6:
-                return False, None
+                continue
+            robot_dir_normalized = (robot_direction[0]/dir_norm, robot_direction[1]/dir_norm)
 
-            norm_dir = (robot_direction[0] / dir_norm, robot_direction[1] / dir_norm)
+            # Robot velocity vector
+            vr = (robot_dir_normalized[0] * robot_speed, robot_dir_normalized[1] * robot_speed)
+            vo = obstacle_vel
 
-            stop_position = (
-                int(robot_pos[0] + distance_to_stop * norm_dir[0]),
-                int(robot_pos[1] + distance_to_stop * norm_dir[1])
-            )
+            # Paper formula (24): α = θr - θo
+            # Calculate angle between robot and obstacle directions
+            robot_angle = math.atan2(robot_dir_normalized[1], robot_dir_normalized[0])
+            obstacle_angle = math.atan2(vo[1], vo[0]) if (vo[0]**2 + vo[1]**2) > 1e-6 else 0
+            alpha = robot_angle - obstacle_angle
 
-            # Thời gian chờ: thời gian để vật cản đi qua + một khoảng an toàn
-            obstacle_speed = math.sqrt(
-                self.dynamic_obstacles[colliding_obstacle]['velocity'][0] ** 2 +
-                self.dynamic_obstacles[colliding_obstacle]['velocity'][1] ** 2
-            )
+            # Paper formula (25): Cosine theorem for collision time
+            # (vr*t)² + (vo*t)² - d² = 2*vr*vo*t*cos(α)
+            vr_mag = math.sqrt(vr[0]**2 + vr[1]**2)
+            vo_mag = math.sqrt(vo[0]**2 + vo[1]**2)
 
-            # Nếu vật cản đứng yên hoặc di chuyển quá chậm
-            if obstacle_speed < 0.05:
-                wait_time = 1.5  # Không chờ, tìm đường khác
-                return False, None
-            # Thêm logic động để tính wait time
-            base_wait = min_time_to_collision * 0.8  # 80% của thời gian collision
-            safety_buffer = 0.3  # Buffer an toàn
+            if vr_mag < 1e-6 or vo_mag < 1e-6:
+                continue
 
-            # Điều chỉnh theo size của vật cản
-            raw_size = self.dynamic_obstacles[colliding_obstacle].get('size', 1.0)
-            if isinstance(raw_size, tuple):
-                obstacle_size = max(raw_size)
-            else:
-                obstacle_size = raw_size
-            size_factor = 1.0 + (obstacle_size - 1.0) * 0.3  # Bigger obstacles need more wait time
+            # Quadratic equation: at² + bt + c = 0
+            # where (vr² + vo² - 2*vr*vo*cos(α))t² - d² = 0
+            a = vr_mag**2 + vo_mag**2 - 2*vr_mag*vo_mag*math.cos(alpha)
+            c = -d**2
 
-            wait_time = max(0.3, min(2.0, (base_wait + safety_buffer) * size_factor))
+            if abs(a) < 1e-6:  # Linear case
+                continue
 
-            return True, (stop_position, wait_time)
+            discriminant = -4*a*c
+            if discriminant < 0:  # No collision
+                continue
 
+            t0 = math.sqrt(discriminant) / (2*abs(a))  # Collision time
+
+            if t0 < min_collision_time and t0 > 0:
+                min_collision_time = t0
+
+                # Paper formula (26): Sr = vr*t0 - Lr (robot stopping distance)
+                Lr = 0.5  # Robot length
+                Sr = vr_mag * t0 - Lr
+
+                if Sr > 0:
+                    stop_pos = (
+                        int(robot_pos[0] + Sr * robot_dir_normalized[0]),
+                        int(robot_pos[1] + Sr * robot_dir_normalized[1])
+                    )
+
+                    # Paper formula (27): Wait time calculation
+                    safety_buffer = 1.0
+                    wait_time = t0 + safety_buffer
+
+                    collision_info = (stop_pos, wait_time)
+
+        if collision_info:
+            return True, collision_info
         return False, None

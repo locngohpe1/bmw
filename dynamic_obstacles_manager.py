@@ -15,7 +15,7 @@ class DynamicObstaclesManager:
         self.speed_factor = speed_factor
 
         # đoạn code sửa
-        self.human_icon = pg.image.load('assets/human_icon2.png')  # Load icon người
+        self.human_icon = pg.image.load('assets/human_icon3.png')  # Load icon người
         self.human_icon = pg.transform.scale(self.human_icon, (16, 26))  # Resize icon
 
         # Không tự khởi tạo vật cản động nữa
@@ -64,7 +64,6 @@ class DynamicObstaclesManager:
                 }
 
                 self.obstacles.append(obstacle)
-                self._mark_obstacle_cells(pos, obstacle['size'])
                 self.next_id += 1
 
         print(f"Created {len(self.obstacles)} manual dynamic obstacles")
@@ -79,20 +78,6 @@ class DynamicObstaclesManager:
                         0 <= col < len(self.grid_map.map[0]) and
                         self.grid_map.map[row, col] == 'd'):
                     self.grid_map.map[row, col] = 0
-
-    def _mark_obstacle_cells(self, center_pos, size):
-        if isinstance(size, tuple):
-            max_dim = max(size)
-        else:
-            max_dim = size
-        radius = int(max_dim / 2)
-        for dr in range(-radius, radius + 1):
-            for dc in range(-radius, radius + 1):
-                row, col = center_pos[0] + dr, center_pos[1] + dc
-                if (0 <= row < len(self.grid_map.map) and
-                        0 <= col < len(self.grid_map.map[0]) and
-                        self.grid_map.map[row, col] not in (1, 'o', 'e')):
-                    self.grid_map.map[row, col] = 'd'
 
     def update(self, delta_time):
         """Cập nhật vị trí vật cản động theo thời gian"""
@@ -146,7 +131,6 @@ class DynamicObstaclesManager:
 
             if old_pos != obstacle['pos']:
                 self._clear_obstacle_cells(old_pos, size)
-                self._mark_obstacle_cells(obstacle['pos'], size)
                 size_str = str(size)
                 print(f"Dynamic obstacle {obstacle['id']} (size={size_str}) moved to {obstacle['pos']}")
 
@@ -181,3 +165,7 @@ class DynamicObstaclesManager:
                             0 <= col < len(self.grid_map.map[0])):
                         positions.append((row, col))
         return positions
+
+    def _mark_obstacle_cells(self, center_pos, size):
+        """DISABLED: Dynamic obstacles không được mark lên grid map"""
+        pass
