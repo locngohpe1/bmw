@@ -14,7 +14,7 @@ from copy import deepcopy
 
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt', help='Path to map file')
 parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
@@ -948,7 +948,7 @@ def main():
     covered_cells = total_coverage_cells
 
     if total_free_cells > 0:
-        coverage_rate = (covered_cells / total_free_cells) * 100.0
+        coverage_rate = (covered_cells /total_free_cells) * 100.0
         uncovered_cells = total_free_cells - covered_cells
         print(f'6. Coverage Rate: {coverage_rate - bwave_overlap_rate:.2f}%')
     else:
