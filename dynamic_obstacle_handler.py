@@ -63,7 +63,7 @@ class DynamicObstacleHandler:
             del self.dynamic_obstacles[obstacle_id]
 
     def predict_collision(self, robot_pos, robot_direction, robot_speed, obstacle_id):
-        """Predict collision with improved velocity model"""
+        """Dự đoán va chạm với improved velocity model"""
         if obstacle_id not in self.dynamic_obstacles:
             return False, None
 
@@ -71,14 +71,15 @@ class DynamicObstacleHandler:
         obstacle_pos = obstacle['position']
         obstacle_vel = obstacle['velocity']
 
-        # Human movement uncertainty factor
-        vel_uncertainty = 0.3
+        # ✅ IMPROVED: Tính velocity uncertainty cho human movement
+        vel_uncertainty = 0.3  # Human movement uncertainty factor
 
-        # Non-linear velocity model - humans slow down near obstacles
+        # ✅ IMPROVED: Non-linear velocity model
+        # Humans tend to slow down near obstacles
         distance_to_robot = math.sqrt((obstacle_pos[0] - robot_pos[0]) ** 2 +
                                       (obstacle_pos[1] - robot_pos[1]) ** 2)
 
-        if distance_to_robot < 3.0:
+        if distance_to_robot < 3.0:  # Close to robot
             # Humans slow down when near robots
             deceleration_factor = max(0.3, distance_to_robot / 3.0)
             adjusted_obstacle_vel = (obstacle_vel[0] * deceleration_factor,
@@ -86,7 +87,7 @@ class DynamicObstacleHandler:
         else:
             adjusted_obstacle_vel = obstacle_vel
 
-        # Add velocity uncertainty
+        # ✅ IMPROVED: Add velocity uncertainty
         vel_magnitude = math.sqrt(adjusted_obstacle_vel[0] ** 2 + adjusted_obstacle_vel[1] ** 2)
         if vel_magnitude > 0:
             uncertainty_x = vel_uncertainty * vel_magnitude * (np.random.random() - 0.5)
@@ -118,10 +119,7 @@ class DynamicObstacleHandler:
         rel_pos = (obstacle_pos[0] - robot_pos[0], obstacle_pos[1] - robot_pos[1])
 
         # Tính thời gian đến gần nhất
-        rel_vel_squared = rel_vel[0] ** 2 + rel_vel[1] ** 2
-        if rel_vel_squared < 1e-12:  # Avoid division by zero
-            return False, None
-        t_closest = -(rel_pos[0] * rel_vel[0] + rel_pos[1] * rel_vel[1]) / rel_vel_squared
+        t_closest = -(rel_pos[0] * rel_vel[0] + rel_pos[1] * rel_vel[1]) / (rel_vel[0] ** 2 + rel_vel[1] ** 2)
 
         # Nếu thời gian âm, vật cản đang đi xa khỏi robot
         if t_closest < 0:

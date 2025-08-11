@@ -47,7 +47,7 @@ class Grid_Map:
         self.battery_pos = (0, 0)
         self.vehicle_pos = (0, 0)
         self.dynamic_obstacles = []  # Initialize dynamic obstacles list
-        self.visual_markers = []  # Visual indicators for dynamic obstacles (UI only)
+
         self.battery_img = pg.Rect(BORDER, BORDER, EPSILON - BORDER, EPSILON - BORDER)
 
         self.trajectories = [[(0, 0)]] # list of trajectories (currently only coverage path)
@@ -118,29 +118,17 @@ class Grid_Map:
                                     'id': f"manual_{len(self.dynamic_obstacles)}",
                                     'size': obstacle_size,
                                     'size_str': obstacle_size_str,
-                                    'shape': shape,
-                                    'hidden': True,  # HIDDEN - robot không biết
-                                    'discovered': False  # Chưa được AI phát hiện
+                                    'shape': shape
                                 }
 
                                 self.dynamic_obstacles.append(dynamic_obstacle)
 
-                                # ✅ CREATE VISUAL MARKER (3x1 matrix) - UI only
-                                visual_positions = []
-                                for dr, dc in shape:  # shape = [(0, 0), (1, 0), (-1, 0)]
-                                    visual_row, visual_col = row + dr, col + dc
-                                    if self.check_valid_pos((visual_row, visual_col)):
-                                        if self.map[visual_row][visual_col] == 0:  # Only mark on free space
-                                            self.map[visual_row][visual_col] = 'v'  # 'v' for visual marker
-                                            visual_positions.append((visual_row, visual_col))
+                                # Đánh dấu toàn bộ khối lên bản đồ
+                                for dr, dc in shape:
+                                    r, c = row + dr, col + dc
+                                    if 0 <= r < self.row_count and 0 <= c < self.col_count:
+                                        self.map[r][c] = 'd'
 
-                                self.visual_markers.append({
-                                    'positions': visual_positions,
-                                    'obstacle_id': dynamic_obstacle['id']
-                                })
-
-                                print(
-                                    f"➕ Created HIDDEN dynamic obstacle at {(row, col)} with visual marker - robot doesn't know yet!")
                         else:  # normal left click: static obstacle
                             draw_obstacle = True
                     if mouse_pressed[2]:  # right mouse click: starting position
@@ -214,8 +202,6 @@ class Grid_Map:
                     color = BLACK
                 elif self.map[row][col] == 'd':  # dynamic obstacle
                     color = RED
-                elif self.map[row][col] == 'v':  # visual marker for dynamic obstacle spawn
-                    color = LIGHT_ORANGE  # Orange color for visual markers
                 elif self.map[row][col] == '_':
                     color = GREY
                 elif self.map[row][col] == 'e':
@@ -353,23 +339,7 @@ class Grid_Map:
         if col < 0 or col >= self.col_count: return False
         return True
 
-    def clear_visual_markers(self):
-        """Clear all visual markers when robot starts running"""
-        markers_cleared = len(self.visual_markers)
 
-        for marker in self.visual_markers:
-            for pos in marker['positions']:
-                row, col = pos
-                if self.check_valid_pos(pos) and self.map[row][col] == 'v':
-                    self.map[row][col] = 0  # Reset to free space
-
-        self.visual_markers.clear()
-
-        # ✅ FORCE REDRAW UI to remove visual markers from screen
-        self.draw_map()  # Redraw the grid surface
-        pg.display.flip()  # Force update display
-
-        print(f"🗑️ Cleared {markers_cleared} visual markers from UI - robot is now running")
 def main():
     ui = Grid_Map()
     ui.read_map('map/tmp2.txt')

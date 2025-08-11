@@ -18,6 +18,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 # Xử lý tham số dòng lệnh
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
 parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt', help='Path to map file')
+#parser.add_argument('--dynamic', type=int, default=3, help='Number of dynamic obstacles')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
@@ -29,6 +30,7 @@ ENERGY_CAPACITY = args.energy
 ui = Grid_Map()
 ui.read_map(args.map)
 ENVIRONMENT, battery_pos = ui.edit_map()
+# ui.save_map('map/empty_map.txt')
 
 ROW_COUNT = len(ENVIRONMENT)
 COL_COUNT = len(ENVIRONMENT[0])
@@ -41,12 +43,11 @@ return_charge_count = 0
 count_cell_go_through = 1
 deadlock_count = 0
 extreme_deadlock_count = 0
-dynamic_wait_count = 0
-dynamic_obstacles = None
+dynamic_wait_count = 0  # Đếm số lần robot phải chờ do vật cản động
+dynamic_obstacles = None  # Global reference cho dynamic obstacles manager
 execute_time = time.time()
-total_coverage_cells = 0
-total_free_cells = 0
-
+total_coverage_cells = 0  # Tổng số cells đã được coverage (có thể overlap)
+total_free_cells = 0     # Tổng số free cells trong environment
 # Find special area
 from optimization import get_special_area
 
@@ -75,7 +76,7 @@ class Robot:
             'o': obstacle (static)
             'd': dynamic obstacle 
         '''
-        self.mode = "NORMAL"
+        self.mode = "NORMAL"  # chế độ mặc định ban đầu
         self.map = None
         self.current_pos = battery_pos
 
@@ -104,17 +105,14 @@ class Robot:
         self.waiting = False
         self.wait_time = 0
         self.wait_start_time = 0
-        self.wait_reason = ""
+        self.wait_reason = ""  # Lý do chờ đợi để hiển thị
 
         # Previous camera image for motion detection
         self.previous_camera_image = None
 
         # Essential tracking only
         self.total_moves = 0
-        self.detected_positions = set()
-
-        # Thread safety lock
-        self._update_lock = threading.Lock()
+        self.detected_positions = set()  # Cần thiết cho detect_and_classify_obstacles
 
     def set_map(self, environment):
         row_count, col_count = len(environment), len(environment[0])
@@ -124,8 +122,6 @@ class Robot:
             for y in range(len(environment[0])):
                 if environment[x, y] == 1:
                     self.map[x, y] = 'o'
-                else:
-                    self.map[x, y] = 'u'
 
         self.logic.set_weight_map(environment)
 
@@ -140,8 +136,8 @@ class Robot:
         last_time = time.time()
 
         while run:
-            # Thread safety lock
-            with self._update_lock:
+            # ✅ LOCK mechanism cho thread safety
+            with threading.Lock() if hasattr(self, '_update_lock') else contextlib.nullcontext():
                 # Tính delta time cho vật cản động
                 current_time = time.time()
                 delta_time = current_time - last_time
@@ -151,13 +147,12 @@ class Robot:
                 obstacle_snapshot = self._get_obstacle_snapshot()
 
                 # Cập nhật vật cản động với snapshot
-                if dynamic_obstacles is not None:
-                    dynamic_obstacles.update(delta_time)
+                dynamic_obstacles.update(delta_time)
 
             ui.draw()
 
             # Vẽ thêm vật cản động nếu có
-            if 'dynamic_obstacles' in globals() and dynamic_obstacles is not None:
+            if 'dynamic_obstacles' in globals():
                 dynamic_obstacles.draw(ui.WIN)
             pg.display.flip()
 
@@ -226,6 +221,7 @@ class Robot:
                 for obstacle in dynamic_obstacles.obstacles:
                     pos = obstacle['pos']
                     obstacle_id = obstacle['id']
+
                     # Update với size information
                     if obstacle_id not in self.dynamic_obstacle_handler.dynamic_obstacles:
                         self.dynamic_obstacle_handler.register_obstacle(obstacle_id, pos,
@@ -253,22 +249,19 @@ class Robot:
             if selected_cell == self.current_pos:
                 self.task()
             else:
-                # Normal coverage state
+                # CP 0
                 if self.logic.state == Q.NORMAL:
-                    # Check energy before movement
+                    # ✅ ENERGY CHECK TRƯỚC - Logic đúng
                     if self.check_enough_energy(selected_cell) == False:
                         self.charge_planning()
                         continue
-                    # Check dynamic collision
+                    # ✅ SAU ĐÓ MỚI CHECK COLLISION
                     if self.check_dynamic_collision(selected_cell):
                         dynamic_wait_count += 1
                         continue
                     self.move_to(selected_cell)
-                    # ✅ ALWAYS TASK AFTER MOVING TO A CELL
-                    if self.map[self.current_pos] == 'u':  # Only task unvisited cells
-                        self.task()
 
-                # Deadlock state
+                # CP l (l > 0)
                 elif self.logic.state == Q.DEADLOCK:
                     path, dist = self.logic.cache_path, self.logic.cache_dist
                     print(f"Deadlock ({round(dist, 2)})")
@@ -305,10 +298,10 @@ class Robot:
     def task(self):
         global total_coverage_cells
         current_pos = self.current_pos
-        self.map[current_pos] = 'e'  # ✅ UPDATE ROBOT.MAP
+        self.map[current_pos] = 'e'
         self.logic.update_explored(current_pos)
-        ui.task(current_pos)  # Update UI
-        total_coverage_cells += 1
+        ui.task(current_pos)
+        total_coverage_cells += 1  # Đếm mỗi lần task (coverage)
 
     def move_to(self, pos):
         global total_travel_length, coverage_length, retreat_length, advance_length
@@ -331,13 +324,6 @@ class Robot:
         if self.move_status == 0:
             ui.move_to(pos)
             coverage_length += dist
-            # ✅ AUTO TASK when moving to unvisited cell during coverage
-            if self.map[pos] == 'u':
-                self.map[pos] = 'e'
-                self.logic.update_explored(pos)
-                ui.task(pos)
-                global total_coverage_cells
-                total_coverage_cells += 1
         elif self.move_status == 1:
             ui.move_retreat(pos)
             retreat_length += dist
@@ -368,21 +354,26 @@ class Robot:
     def rotate_to(self, pos_to):
         self.angle = self.get_angle(pos_to)
 
+
     def check_enough_energy(self, wp):
         return_dist_from_wp = return_matrix[wp][1]
         basic_energy = math.dist(self.current_pos, wp) + 0.5 * return_dist_from_wp
 
-        # Estimate waiting energy cost for dynamic obstacles
+        # ✅ THÊM: Estimate waiting energy cost for dynamic obstacles
         waiting_energy_buffer = 0
+
+        # Check potential dynamic obstacles on path to wp
         path_cells = self._get_path_cells(self.current_pos, wp)
         for cell in path_cells:
             if hasattr(self, 'map') and self.map[cell] == 'd':
-                waiting_energy_buffer += 2.0
+                waiting_energy_buffer += 2.0  # Energy cost for potential waiting
 
-        # Buffer for potential detours (20%)
-        dynamic_detour_buffer = basic_energy * 0.2
+        # ✅ THÊM: Buffer cho potential detours
+        dynamic_detour_buffer = basic_energy * 0.2  # 20% buffer for detours
+
         total_expected_energy = basic_energy + waiting_energy_buffer + dynamic_detour_buffer
         return self.energy >= total_expected_energy
+
 
     def _get_path_cells(self, start, end):
         """Estimate cells on direct path"""
@@ -424,9 +415,10 @@ class Robot:
     def retreat(self):
         return_path = get_return_path(return_matrix, self.current_pos)
         self.cache_path = return_path  # save for reuse in advance path
+
         self.move_status = 1
         ui.set_charge_path(return_path)
-        self.follow_path_plan(return_path, time_delay=0.05, check_energy=True)
+        self.follow_path_plan(return_path, time_delay=0.05)
 
     def charge(self):
         self.move_status = 2
@@ -436,15 +428,20 @@ class Robot:
         self.move_status = 3
         advance_path = list(reversed(self.cache_path))
         ui.set_charge_path(advance_path)
-        self.follow_path_plan(advance_path, time_delay=0.05, check_energy=True)
+        self.follow_path_plan(advance_path, time_delay=0.05)
 
     def follow_path_plan(self, path, time_delay=0, check_energy=False, stop_on_unexpored=False):
         is_retreat = self.mode == "RETREAT"
         wait_loops = 0
-        max_wait_loops = 50 if is_retreat else 30  # Dynamic timeout: retreat gets higher priority
+        max_wait_loops = 50
         clock = pg.time.Clock()  # giới hạn tốc độ vòng lặp nếu cần
 
         for pos in path:
+            print(f"\n🔁 [RETREAT STEP] Next pos: {pos}, energy left: {self.energy:.2f}")
+
+            if self.map[pos] == 'd':
+                print(f"⚠️  Cell {pos} is marked as dynamic obstacle in map")
+
             # Cập nhật vật cản động mỗi bước
             delta_time = clock.get_time() / 1000.0
             dynamic_obstacles.update(delta_time)
@@ -454,16 +451,10 @@ class Robot:
                     print(f"⚠️ Not enough energy during retreat at {pos} — skipping this step")
                     return
                 else:
-                    print(f"⚠️ Not enough energy during advance at {pos} — emergency return")
-                    return  # PREVENT INFINITE RECURSION
-
-            # Apply waiting rule if dynamic obstacles present
-            collision_attempts = 0
-            max_collision_attempts = 5
-
-            while self.check_dynamic_collision(pos) and collision_attempts < max_collision_attempts:
-                collision_attempts += 1
-                delta_time = clock.tick(FPS) / 1000.0
+                    self.charge_planning()
+            # Áp dụng waiting rule nếu có vật cản động
+            while self.check_dynamic_collision(pos):
+                delta_time = clock.tick(FPS) / 1000.0  # cập nhật đúng mỗi frame
                 dynamic_obstacles.update(delta_time)
                 ui.draw()
                 dynamic_obstacles.draw(ui.WIN)
@@ -474,21 +465,17 @@ class Robot:
                     ui.WIN.blit(wait_img, (10, 10))
 
                 pg.display.flip()
-                pg.time.delay(50)  # Reduced delay
+                pg.time.delay(100)
 
                 if self.waiting and time.time() - self.wait_start_time >= self.wait_time:
                     self.waiting = False
                     print("✅ Done waiting — will try to move again")
-                    break  # Exit after waiting complete
 
-                wait_loops += 1
-                if wait_loops > max_wait_loops:
-                    phase_name = "Retreat" if is_retreat else "Advance"
-                    print(f"⛔ {phase_name} waiting timeout — skipping this cell")
-                    break
-
-            if collision_attempts >= max_collision_attempts:
-                print(f"⛔ Max collision attempts reached for {pos} — skipping this cell")
+                if is_retreat:
+                    wait_loops += 1
+                    if wait_loops > max_wait_loops:
+                        print("⛔ Retreat waiting timeout — skipping this cell")
+                        break
 
             # Di chuyển bình thường
             self.move_to(pos)
@@ -571,27 +558,14 @@ class Robot:
                 print(f"🔍 GoogLeNet Classification: {class_name} (confidence: {confidence:.3f})")
 
                 # Only accept high-confidence predictions
-                if confidence > 0.6:  # Threshold cho accuracy
+                if confidence > 0.75:  # Threshold cho accuracy
                     pos_key = (abs_row, abs_col)
 
                     if class_name == 'dynamic' and pos_key not in self.detected_positions:
-                        # ✅ CHECK: Is this a first-time discovery?
-                        hidden_obstacle = dynamic_obstacles.get_obstacle_by_position(pos_key)
-                        if hidden_obstacle and hidden_obstacle.get('hidden', False):
-                            # 🎯 FIRST DISCOVERY!
-                            dynamic_obstacles.discover_obstacle(hidden_obstacle['id'])
-                            self.detected_positions.add(pos_key)
-                            print(f"🎉 RESEARCH ACHIEVEMENT: Robot DISCOVERED hidden obstacle via AI!")
-                        # Mark as discovered dynamic obstacle
+                        self.detected_positions.add(pos_key)
                         self.map[pos_key] = 'd'
-                        # Mark obstacle as discovered in simulation
-                        for obs in dynamic_obstacles.obstacles:
-                            if abs(obs['pos'][0] - abs_row) <= 1 and abs(obs['pos'][1] - abs_col) <= 1:
-                                if obs.get('hidden', False):
-                                    obs['hidden'] = False
-                                    obs['discovered'] = True
-                                    print(f"🔍 FIRST DISCOVERY: Dynamic obstacle at {pos_key}!")
-                                break
+
+                        # Register with dynamic obstacle handler
                         obstacle_id = f"googlet_{self.next_obstacle_id}"
                         self.next_obstacle_id += 1
                         self.dynamic_obstacle_ids[pos_key] = obstacle_id
@@ -607,25 +581,19 @@ class Robot:
                     print(f"⚠️ Low confidence detection ignored: {confidence:.3f}")
         self.previous_camera_image = current_image
 
+
     def check_dynamic_collision(self, target_pos):
         """Unified collision check với consistent state management"""
 
-        # Step 1: GoogLeNet classification
+        # ✅ STEP 1: GoogLeNet classification (ground truth)
         obstacle_roi = self.virtual_camera.capture_obstacle_roi(target_pos, (2, 2))
         class_name, confidence = self.obstacle_classifier.classify(obstacle_roi)
+
         print(f"🔍 Real-time GoogLeNet: {target_pos} -> {class_name} ({confidence:.3f})")
 
-        # Step 2: Update map state based on AI classification
+        # ✅ STEP 2: Update map state based on AI classification
         if confidence > 0.75:  # High confidence threshold
             if class_name == 'dynamic':
-                # ✅ CHECK: First discovery of hidden obstacle?
-                if self.map[target_pos] != 'd':
-                    hidden_obstacle = dynamic_obstacles.get_obstacle_by_position(target_pos)
-                    if hidden_obstacle and hidden_obstacle.get('hidden', False):
-                        # 🎯 FIRST DISCOVERY via collision check!
-                        dynamic_obstacles.discover_obstacle(hidden_obstacle['id'])
-                        print(f"🔍 COLLISION DISCOVERY: Found hidden obstacle at {target_pos}!")
-
                 self.map[target_pos] = 'd'  # Update map to dynamic
                 self.classified_obstacles[target_pos] = ('dynamic', confidence)
             elif class_name == 'static':
@@ -655,11 +623,6 @@ class Robot:
                     break
 
             if is_real_dynamic:
-                # ✅ DISCOVERY CHECK: First time encountering this obstacle?
-                if obstacle.get('hidden', False):
-                    dynamic_obstacles.discover_obstacle(obstacle['id'])
-                    print(f"🎯 COLLISION-TRIGGERED DISCOVERY: {obstacle['id']} at {target_pos}!")
-
                 obstacle_size = obstacle.get('size', 1.0)
                 if isinstance(obstacle_size, tuple):
                     obstacle_size = max(obstacle_size)
@@ -676,7 +639,7 @@ class Robot:
             else:
                 # Clean up stale dynamic marking
                 if check_valid_pos(target_pos) and self.map[target_pos] == 'd':
-                    self.map[target_pos] = 'u'
+                    self.map[target_pos] = 0
                     print(f"🧹 Cleaned up stale dynamic marking at {target_pos}")
                 return False
 
@@ -721,34 +684,24 @@ class Robot:
             return True
 
         return False
-
-
 def main():
     global dynamic_obstacles
     dynamic_obstacles = None
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
-
-    # Tính tổng số free cells (S_free) trong environment TRƯỚC KHI TẠO DYNAMIC OBSTACLES
-    global total_free_cells, ORIGINAL_ENVIRONMENT
-    ORIGINAL_ENVIRONMENT = np.copy(ENVIRONMENT)  # Backup original environment
-    total_free_cells = np.sum(ORIGINAL_ENVIRONMENT == 0)  # Include charging station
-    print(f"Total free cells in ORIGINAL environment: {total_free_cells}")
+    # Tính tổng số free cells (S_free) trong environment
+    global total_free_cells
+    total_free_cells = np.sum(ENVIRONMENT == 0)  # Đếm số cells = 0 (free space)
+    print(f"Total free cells in environment: {total_free_cells}")
 
     # Khởi tạo trình quản lý vật cản động với manual obstacles từ ui
     dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=0, speed_factor=args.speed)
 
     # Khởi tạo các vật cản manual từ grid_map only if
     if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
-        # Mark all manual obstacles as hidden initially
-        for obstacle in ui.dynamic_obstacles:
-            obstacle['hidden'] = True
-            obstacle['discovered'] = False  # Robot hasn't found it yet
         dynamic_obstacles.initialize_obstacles()
         print(f"Initialized {len(ui.dynamic_obstacles)} manual dynamic obstacles")
-    # ✅ CLEAR VISUAL MARKERS when robot starts to run
-    ui.clear_visual_markers()
     print("Using BWave Framework with Dynamic Obstacles")
     print(f"GPU available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
@@ -790,18 +743,7 @@ def main():
     # 5. Execution Time (already correct)
     print(f'5. Execution Time: {execute_time:.3f}s')
 
-    # 6. Coverage Rate
-    covered_cells = total_coverage_cells
-
-    if total_free_cells > 0:
-        coverage_rate = (covered_cells / total_free_cells) * 100.0
-        uncovered_cells = total_free_cells - covered_cells
-        print(f'6. Coverage Rate: {coverage_rate-bwave_overlap_rate:.2f}%')
-    else:
-        print(f'6. Coverage Rate: 0.00%')
-
     print('=' * 50)
-
 
 if __name__ == "__main__":
     main()

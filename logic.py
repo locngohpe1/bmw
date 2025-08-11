@@ -115,15 +115,15 @@ class Logic:
             # traverse neighbors
             for dx, dy in neighbors:
                 x, y = cur_node[0] + dx, cur_node[1] + dy
-
-                if not (0 <= x < len(weight_map) and 0 <= y < len(weight_map[0])):
-                    continue
+                
+                if x < 0 or x >= len(weight_map): continue
+                if y < 0 or y >= len(weight_map[0]): continue
                 if weight_map[x, y] == -1: continue  # static obstacle
 
-                # Check dynamic obstacles in escape path
+                # ✅ CHECK DYNAMIC OBSTACLES trong escape path
                 if hasattr(self, 'grid_map') and self.grid_map:
-                    if self.grid_map.map[x, y] == 'd':
-                        continue
+                    if self.grid_map.map[x, y] == 'd':  # Dynamic obstacle present
+                        continue  # Skip cells occupied by dynamic obstacles
 
                 new_dist = return_matrix[cur_node][1] + math.dist(cur_node, (x, y))
                 if new_dist < return_matrix[x, y][1]:
