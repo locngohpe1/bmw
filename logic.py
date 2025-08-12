@@ -2,13 +2,11 @@ import math
 import numpy as np
 from collections import deque
 
-LOCAL_NEIGHBOR_0_WIDTH = 3
+LLOCAL_NEIGHBOR_0_WIDTH = 3
 neighbors = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
-
 
 class Q:
     START, NORMAL, DEADLOCK, FINISH = range(4)
-
 
 def init_weight_map_mask(row, col):
     weight_map = np.zeros([row, col])
@@ -17,9 +15,8 @@ def init_weight_map_mask(row, col):
             weight_map[i][j] = col - j
     return weight_map
 
-
 class Logic:
-    def __init__(self, row_count, col_count, grid_map=None, custom_field_b=None):
+    def __init__(self, row_count, col_count, grid_map=None):
         self.grid_map = grid_map
         self.state = Q.START
         self.weight_map = init_weight_map_mask(row_count, col_count)
@@ -205,33 +202,8 @@ class Logic:
                 return True
         return False
 
-    def read_weight_map(self, filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
-            col_count, row_count = [int(i) for i in f.readline().strip().split()]
-            weight_map = []
-            for line in f:
-                line = [int(value) for value in line.strip().split()]
-                weight_map.append(line)
-            weight_map = np.array(weight_map)
-            self.weight_map = weight_map
-
-    def save_weight_map(self, output_file):
-        weight_map = self.weight_map
-        with open(output_file, "w", encoding="utf-8") as f:
-            col_count, row_count = len(weight_map[0]), len(weight_map)
-            f.write(str(col_count) + ' ' + str(row_count) + '\n')
-            for row in weight_map:
-                line = ['{:<3}'.format(str(int(value))) for value in row]
-                line = "".join(line)
-                f.write(line + '\n')
-
     def set_special_areas(self, special_areas):
         col_count = len(self.weight_map[0])
         for region in special_areas:
             for x, y in region.cell_list:
                 self.weight_map[x, y] = col_count + 3 - region.min_y + (y - region.min_y)
-
-
-if __name__ == "__main__":
-    etm = Logic(11, 11)
-    print(etm.weight_map)

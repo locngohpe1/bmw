@@ -12,10 +12,6 @@ from setup_data import setup_training_data
 
 class ObstacleDataset(Dataset):
     def __init__(self, root_dir, transform=None):
-        """
-        Dataset để huấn luyện phân loại vật cản
-        root_dir: thư mục chứa 2 thư mục con 'static' và 'dynamic'
-        """
         self.root_dir = root_dir
         self.transform = transform
         self.classes = ['static', 'dynamic']
@@ -23,7 +19,6 @@ class ObstacleDataset(Dataset):
         self.images = []
         self.labels = []
 
-        # Đọc dữ liệu từ các thư mục
         for class_idx, class_name in enumerate(self.classes):
             class_dir = os.path.join(root_dir, class_name)
 
@@ -41,7 +36,6 @@ class ObstacleDataset(Dataset):
         img_path = self.images[idx]
         label = self.labels[idx]
 
-        # Đọc và chuyển đổi hình ảnh
         from PIL import Image
         image = Image.open(img_path).convert('RGB')
 
@@ -52,15 +46,12 @@ class ObstacleDataset(Dataset):
 
 
 def train_obstacle_classifier():
-    # Kiểm tra GPU
     use_gpu = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_gpu else "cpu")
-    print(f"Using device: {device}")
+
     if not os.path.exists('data/obstacles/train/static') or len(os.listdir('data/obstacles/train/static')) == 0:
-        print("Không tìm thấy dữ liệu huấn luyện. Đang tạo dữ liệu mẫu...")
         setup_training_data()
 
-    # Chuẩn bị dữ liệu
     data_transforms = {
         'train': transforms.Compose([
             transforms.RandomResizedCrop(224),
@@ -76,10 +67,8 @@ def train_obstacle_classifier():
         ]),
     }
 
-    # Đường dẫn đến thư mục dữ liệu
     data_dir = 'data/obstacles'
 
-    # Tạo datasets và dataloaders
     train_dataset = ObstacleDataset(
         os.path.join(data_dir, 'train'),
         transform=data_transforms['train']
@@ -93,11 +82,8 @@ def train_obstacle_classifier():
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=4)
 
-    # Tạo và huấn luyện mô hình
     classifier = ObstacleClassifier(use_gpu=use_gpu)
     classifier.train(train_loader, val_loader, num_epochs=10, learning_rate=0.001)
-
-    print("Training complete!")
 
 
 if __name__ == "__main__":

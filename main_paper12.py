@@ -17,7 +17,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 from optimization import get_special_area, return_path_matrix, get_return_path
 
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
 parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
@@ -45,13 +45,11 @@ total_free_cells = 0
 special_areas = get_special_area(ENVIRONMENT)
 return_matrix = return_path_matrix(ENVIRONMENT, battery_pos)
 
-
 def check_valid_pos(pos):
     row, col = pos
     if row < 0 or row >= ROW_COUNT: return False
     if col < 0 or col >= COL_COUNT: return False
     return True
-
 
 class Robot:
     def __init__(self, initial_battery_pos, map_row_count, map_col_count):
@@ -553,7 +551,6 @@ class Robot:
 
         return False
 
-
 def main():
     global dynamic_obstacles
     robot = Robot(battery_pos, ROW_COUNT, COL_COUNT)
@@ -602,7 +599,6 @@ def main():
     print(f'4. Number of Deadlocks: {deadlock_count} (extreme: {extreme_deadlock_count})')
     print(f'5. Execution Time: {execute_time:.3f}s')
     print('=' * 50)
-
 
 if __name__ == "__main__":
     main()

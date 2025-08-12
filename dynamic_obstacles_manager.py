@@ -8,33 +8,25 @@ from grid_map import EPSILON
 class DynamicObstaclesManager:
     def __init__(self, grid_map, num_obstacles=2, speed_factor=0.5):
         self.grid_map = grid_map
-        self.obstacles = []  # list of {pos, velocity, size, color, id}
+        self.obstacles = []
         self.epsilon = EPSILON
         self.num_obstacles = num_obstacles
         self.next_id = 1
         self.speed_factor = speed_factor
 
-        # đoạn code sửa
-        self.human_icon = pg.image.load('assets/human_icon3.png')  # Load icon người
-        self.human_icon = pg.transform.scale(self.human_icon, (16, 26))  # Resize icon
-
-        # Không tự khởi tạo vật cản động nữa
-        # self.initialize_obstacles()
+        self.human_icon = pg.image.load('assets/human_icon3.png')
+        self.human_icon = pg.transform.scale(self.human_icon, (16, 26))
 
     def initialize_obstacles(self):
-        """Khởi tạo vật cản động từ danh sách manual từ grid_map"""
-        # Lấy danh sách vật cản động từ grid_map nếu có
         if hasattr(self.grid_map, 'dynamic_obstacles'):
             for manual_obs in self.grid_map.dynamic_obstacles:
                 pos = manual_obs['pos']
 
-                # Tạo vận tốc ngẫu nhiên
                 base_velocity = (
                     random.uniform(-0.03, 0.03),
                     random.uniform(-0.03, 0.03)
                 )
 
-                # Đảm bảo vận tốc base không quá nhỏ
                 max_attempts = 30
                 attempt = 0
                 while (abs(base_velocity[0]) < 0.02 and abs(base_velocity[1]) < 0.02) and attempt < max_attempts:
@@ -44,11 +36,9 @@ class DynamicObstaclesManager:
                     )
                     attempt += 1
 
-                # Nếu vẫn quá nhỏ, set một giá trị mặc định
                 if abs(base_velocity[0]) < 0.02 and abs(base_velocity[1]) < 0.02:
                     base_velocity = (0.025, 0.025)
 
-                # Áp dụng speed factor
                 velocity = (
                     base_velocity[0] * max(self.speed_factor, 0.1),
                     base_velocity[1] * max(self.speed_factor, 0.1)
@@ -66,10 +56,7 @@ class DynamicObstaclesManager:
                 self.obstacles.append(obstacle)
                 self.next_id += 1
 
-        print(f"Created {len(self.obstacles)} manual dynamic obstacles")
-
     def _clear_obstacle_cells(self, center_pos, size):
-        """Xóa tất cả cells mà vật cản chiếm"""
         radius = int(max(size) / 2) if isinstance(size, tuple) else int(size / 2)
         for dr in range(-radius, radius + 1):
             for dc in range(-radius, radius + 1):
@@ -80,9 +67,8 @@ class DynamicObstaclesManager:
                     self.grid_map.map[row, col] = 0
 
     def update(self, delta_time):
-        """Cập nhật vị trí vật cản động theo thời gian"""
         if not self.obstacles:
-            return  # Không có vật cản động để cập nhật
+            return
 
         map_width = len(self.grid_map.map[0])
         map_height = len(self.grid_map.map)
@@ -91,7 +77,6 @@ class DynamicObstaclesManager:
             old_pos = obstacle['pos']
             old_exact = obstacle['exact_pos']
 
-            # Tính vị trí mới
             new_x = old_exact[0] + obstacle['velocity'][0] * delta_time * 15
             new_y = old_exact[1] + obstacle['velocity'][1] * delta_time * 15
 
@@ -131,11 +116,8 @@ class DynamicObstaclesManager:
 
             if old_pos != obstacle['pos']:
                 self._clear_obstacle_cells(old_pos, size)
-                size_str = str(size)
-                print(f"Dynamic obstacle {obstacle['id']} (size={size_str}) moved to {obstacle['pos']}")
 
     def draw(self, surface):
-        """Vẽ các vật cản động lên bề mặt pygame"""
         for obstacle in self.obstacles:
             x = obstacle['exact_pos'][1] * self.epsilon
             y = obstacle['exact_pos'][0] * self.epsilon
@@ -145,18 +127,16 @@ class DynamicObstaclesManager:
             surface.blit(self.human_icon, (draw_x, draw_y))
 
     def get_obstacle_info(self, obstacle_id):
-        """Get thông tin chi tiết của vật cản theo ID"""
         for obstacle in self.obstacles:
             if obstacle['id'] == obstacle_id:
                 return obstacle
         return None
 
     def get_all_obstacle_positions(self):
-        """Trả về tất cả vị trí của các vật cản động"""
         positions = []
         for obstacle in self.obstacles:
-            # Trả về tất cả cells mà vật cản chiếm
-            radius = int(max(obstacle['size']) / 2) if isinstance(obstacle['size'], tuple) else int(obstacle['size'] / 2)
+            radius = int(max(obstacle['size']) / 2) if isinstance(obstacle['size'], tuple) else int(
+                obstacle['size'] / 2)
             center_pos = obstacle['pos']
             for dr in range(-radius, radius + 1):
                 for dc in range(-radius, radius + 1):
@@ -167,5 +147,4 @@ class DynamicObstaclesManager:
         return positions
 
     def _mark_obstacle_cells(self, center_pos, size):
-        """DISABLED: Dynamic obstacles không được mark lên grid map"""
         pass
