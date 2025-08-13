@@ -58,7 +58,6 @@ class CCPPInBWaveEnvironment:
         """Get current dynamic obstacle positions from BWave manager"""
         if self.dynamic_obstacles is None:
             return []
-
         positions = []
         for obstacle in self.dynamic_obstacles.obstacles:
             # Convert BWave (row, col) to CCPP (x, y)
