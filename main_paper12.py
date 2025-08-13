@@ -450,7 +450,7 @@ class Robot:
                         self.classified_obstacles[pos_key] = (class_name, confidence)
 
                     elif class_name == 'static':
-                        self.map[pos_key] = 'o'
+                        # Static obstacles should already be known in map - log for debugging only
                         self.classified_obstacles[pos_key] = (class_name, confidence)
 
         self.previous_camera_image = current_image
@@ -492,31 +492,18 @@ class Robot:
         obstacle_roi = self.virtual_camera.capture_obstacle_roi(target_pos, (2, 2))
         class_name, confidence = self.obstacle_classifier.classify(obstacle_roi)
 
-        if confidence > 0.55:
-            if class_name == 'dynamic':
-                obstacle_size = closest_obstacle.get('size', 1.0)
-                if isinstance(obstacle_size, tuple):
-                    obstacle_size = max(obstacle_size)
+        # Only process dynamic obstacles since static map is completely known
+        if confidence > 0.55 and class_name == 'dynamic':
+            obstacle_size = closest_obstacle.get('size', 1.0)
+            if isinstance(obstacle_size, tuple):
+                obstacle_size = max(obstacle_size)
 
-                wait_time = 1.0 + (obstacle_size - 1.0) * 0.5
-                self.waiting = True
-                self.wait_time = wait_time
-                self.wait_start_time = time.time()
-                self.wait_reason = f"AI-DYNAMIC (conf={confidence:.2f})"
-                return True
-
-            elif class_name == 'static':
-                self.map[target_pos] = 'o'
-                ENVIRONMENT[target_pos] = 1
-                ui.map[target_pos] = 1
-                self.logic.weight_map[target_pos] = -1
-                ui.draw_map()
-
-                new_wp = self.logic.get_wp(self.current_pos)
-                if len(new_wp) > 0:
-                    new_selected = self.select_from_wp(new_wp)
-
-                return "BLOCKED"
+            wait_time = 1.0 + (obstacle_size - 1.0) * 0.5
+            self.waiting = True
+            self.wait_time = wait_time
+            self.wait_start_time = time.time()
+            self.wait_reason = f"AI-DYNAMIC (conf={confidence:.2f})"
+            return True
 
         if self.map[target_pos] in (1, 'o'):
             return False

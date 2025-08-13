@@ -72,10 +72,15 @@ class ObstacleClassifier:
     def train(self, train_dataloader, val_dataloader, num_epochs=10, learning_rate=0.001):
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=learning_rate, momentum=0.9)
-
+        print(f"Starting training for {num_epochs} epochs...")
+        print(f"Learning rate: {learning_rate}")
+        print("-" * 50)
         for epoch in range(num_epochs):
             self.model.train()
             running_loss = 0.0
+            epoch_start_time = torch.cuda.Event(enable_timing=True) if torch.cuda.is_available() else None
+            if epoch_start_time:
+                epoch_start_time.record()
 
             for inputs, labels in train_dataloader:
                 inputs = inputs.to(self.device)
@@ -93,6 +98,8 @@ class ObstacleClassifier:
 
             self.model.eval()
             val_accuracy = 0.0
+            val_loss = 0.0
+            correct_predictions = 0
 
             with torch.no_grad():
                 for inputs, labels in val_dataloader:
@@ -102,8 +109,27 @@ class ObstacleClassifier:
                     outputs = self.model(inputs)
                     _, predictions = torch.max(outputs, 1)
                     val_accuracy += torch.sum(predictions == labels).item()
+                    loss = criterion(outputs, labels)
+                    val_loss += loss.item() * inputs.size(0)
+                    correct_predictions += torch.sum(predictions == labels).item()
 
             val_accuracy = val_accuracy / len(val_dataloader.dataset)
+            val_loss = val_loss / len(val_dataloader.dataset)
+
+            # Print epoch results
+            print(f"Epoch [{epoch + 1}/{num_epochs}]")
+            print(f"  Train Loss: {epoch_loss:.4f}")
+            print(f"  Val Loss: {val_loss:.4f}")
+            print(f"  Val Accuracy: {val_accuracy:.4f} ({val_accuracy * 100:.2f}%)")
+
+            if epoch_start_time and torch.cuda.is_available():
+                epoch_end_time = torch.cuda.Event(enable_timing=True)
+                epoch_end_time.record()
+                torch.cuda.synchronize()
+                epoch_time = epoch_start_time.elapsed_time(epoch_end_time) / 1000.0
+                print(f"  Epoch Time: {epoch_time:.2f}s")
+
+            print("-" * 50)
 
         if not os.path.exists('models'):
             os.makedirs('models')
