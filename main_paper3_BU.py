@@ -12,7 +12,6 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 # Import Project D algorithm
 from project_D.ccpp_robot_main import CCPPRobot, GridState, Position
 
-
 class CCPPInBWaveEnvironment:
     def __init__(self):
         """CCPP Robot hoạt động trong BWave Environment"""
@@ -26,16 +25,12 @@ class CCPPInBWaveEnvironment:
         # Metrics tracking - BWave compliant
         self.total_travel_length = 0.0
         self.coverage_length = 0
-        self.advance_length = 0  # ✅ NEW: Track advance movements
-        self.retreat_length = 0  # ✅ NEW: Track retreat movements
         self.return_charge_count = 1
         self.deadlock_count = 0
         self.extreme_deadlock_count = 0
         self.execute_time = 0
         self.total_coverage_cells = 0
         self.total_free_cells = 0
-        self.covered_positions = set()  # ✅ NEW: Track unique covered positions (no overlap)
-        self.blank_cells = 0  # ✅ NEW: Track initial blank cells before dynamic obstacles
 
     def convert_bwave_to_ccpp_map(self, bwave_map, width, height):
         """Convert BWave map format to CCPP format"""
@@ -71,6 +66,22 @@ class CCPPInBWaveEnvironment:
             positions.append((pos_x, pos_y))
         return positions
 
+    def clean_stale_dynamic_marks(self):
+        """✅ Simple dynamic obstacle tracking - Paper compliant"""
+        if not hasattr(self, 'ccpp_robot') or self.dynamic_obstacles is None:
+            return set()
+
+        # Simple approach: Get current dynamic obstacle positions
+        current_dynamic_positions = set()
+        for obstacle in self.dynamic_obstacles.obstacles:
+            center_pos = obstacle['pos']  # (row, col)
+            # Simple single-cell marking as in papers
+            x, y = center_pos[1], center_pos[0]  # Convert to (x, y)
+            if (0 <= x < self.ccpp_robot.width and 0 <= y < self.ccpp_robot.height):
+                current_dynamic_positions.add((x, y))
+
+        return current_dynamic_positions
+
     def update_energy_system(self, distance_moved, is_coverage=True):
         """Update energy system like Project A"""
         if is_coverage:
@@ -78,7 +89,7 @@ class CCPPInBWaveEnvironment:
         else:
             energy_cost = 0.5 * distance_moved  # 0.5 unit for advance/retreat
         self.current_energy -= energy_cost
-
+        
         if self.current_energy <= 0:
             self.current_energy = 0
             return False  # Out of energy
@@ -124,6 +135,9 @@ class CCPPInBWaveEnvironment:
         # UI Editor phase - giữ nguyên Project A
         environment, battery_pos = self.ui.edit_map()
 
+        # Save map if needed
+        # self.ui.save_map('map/ccpp_test_map.txt')
+
         ROW_COUNT = len(environment)
         COL_COUNT = len(environment[0])
 
@@ -147,7 +161,6 @@ class CCPPInBWaveEnvironment:
         # Convert BWave obstacles to CCPP format
         static_obstacles = self.convert_bwave_to_ccpp_map(environment, COL_COUNT, ROW_COUNT)
         self.ccpp_robot.add_obstacles(static_obstacles)
-
         # ✅ FIX: Define start position from battery_pos
         start_x = battery_pos[1]  # Convert (row, col) to (x, y)
         start_y = battery_pos[0]  # Convert (row, col) to (x, y)
@@ -173,7 +186,6 @@ class CCPPInBWaveEnvironment:
 
         # Update UI to show robot at charging station
         self.ui.update_vehicle_pos((start_y, start_x))  # UI uses (row, col)
-
         # Set energy system
         self.energy_capacity = energy_capacity
         self.current_energy = energy_capacity
@@ -189,12 +201,10 @@ class CCPPInBWaveEnvironment:
         time.sleep(0.5)
 
         # Tính tổng số free cells (S_free) - BWave compliant
-        self.blank_cells = np.sum(environment == 0)
-        print(f"Blank cells (before dynamic obstacles): {self.blank_cells}")
-
-        # Tính tổng số free cells (S_free) - BWave compliant
         self.total_free_cells = np.sum(environment == 0)
         print(f"Total free cells in environment: {self.total_free_cells}")
+        self.energy_capacity = energy_capacity
+        self.current_energy = energy_capacity
         print(f"🤖 CCPP Robot initialized at ({start_x}, {start_y})")
 
         # 4. Main Algorithm Loop với BWave Visualization
@@ -230,6 +240,25 @@ class CCPPInBWaveEnvironment:
             # Update dynamic obstacles (Project A)
             if self.dynamic_obstacles:
                 self.dynamic_obstacles.update(delta_time)
+
+            # ✅ CLEAN STALE MARKS FIRST, then get current positions
+            current_dynamic_positions = self.clean_stale_dynamic_marks()
+            # ✅ PAPER COMPLIANT: Robot should NOT know dynamic obstacle positions directly
+            # ✅ ONLY ADD ACTUAL CURRENT DYNAMIC OBSTACLES through sensor simulation
+            # Clear previous dynamic obstacle tracking
+            if hasattr(self.ccpp_robot, 'dynamic_obstacle_positions'):
+                self.ccpp_robot.dynamic_obstacle_positions.clear()
+            else:
+                self.ccpp_robot.dynamic_obstacle_positions = set()
+
+            # Add current dynamic obstacles
+            for pos_x, pos_y in current_dynamic_positions:
+                self.ccpp_robot.dynamic_obstacle_positions.add((pos_x, pos_y))
+                # Only mark as obstacle in CCPP if not already visited
+                if (0 <= pos_x < self.ccpp_robot.width and 0 <= pos_y < self.ccpp_robot.height and
+                        self.ccpp_robot.grid_state[pos_y, pos_x] != GridState.VISITED.value):
+                    self.ccpp_robot.grid_state[pos_y, pos_x] = GridState.OBSTACLE.value
+                    self.ccpp_robot.external_input[pos_y, pos_x] = -self.ccpp_robot.E
 
             # Pygame event handling
             for event in pg.event.get():
@@ -285,36 +314,33 @@ class CCPPInBWaveEnvironment:
                 # Update backtracking list (Algorithm 1) - every step as in paper
                 self.ccpp_robot.update_backtrack_list()
 
-                # ✅ PAPER 3 COMPLIANT: Sensor-based detection only
+                # ✅ SENSOR-BASED DYNAMIC OBSTACLE DETECTION (like main_paper12.py)
+                # Robot should NOT have direct access to dynamic_positions, only detect through sensor range simulation
                 if hasattr(self.ccpp_robot, 'dynamic_obstacle_positions'):
                     self.ccpp_robot.dynamic_obstacle_positions = set()
                 else:
                     self.ccpp_robot.dynamic_obstacle_positions = set()
 
-                # Simulate sensor detection exactly like ccpp_robot_main.py
+                # Simulate sensor detection within sensor range
                 if self.dynamic_obstacles and self.dynamic_obstacles.obstacles:
                     robot_x, robot_y = self.ccpp_robot.position.x, self.ccpp_robot.position.y
                     sensor_range = self.ccpp_robot.sensor_range
 
-                    # Get current obstacle positions for sensor simulation
-                    current_obstacle_positions = []
                     for obstacle in self.dynamic_obstacles.obstacles:
                         obs_row, obs_col = obstacle['pos']  # BWave format (row, col)
                         obs_x, obs_y = obs_col, obs_row  # Convert to CCPP format (x, y)
-                        current_obstacle_positions.append((obs_x, obs_y))
 
-                    # Use ccpp_robot's own sensor detection method
-                    detected_obstacles = self.ccpp_robot.simulate_sensor_detection(current_obstacle_positions)
+                        # Only detect if within sensor range
+                        distance = math.sqrt((robot_x - obs_x) ** 2 + (robot_y - obs_y) ** 2)
+                        if distance <= sensor_range:
+                            self.ccpp_robot.dynamic_obstacle_positions.add((obs_x, obs_y))
+                            # Mark as obstacle in CCPP grid only if detected
+                            if (0 <= obs_x < self.ccpp_robot.width and 0 <= obs_y < self.ccpp_robot.height and
+                                    self.ccpp_robot.grid_state[obs_y, obs_x] != GridState.VISITED.value):
+                                self.ccpp_robot.grid_state[obs_y, obs_x] = GridState.OBSTACLE.value
+                                self.ccpp_robot.external_input[obs_y, obs_x] = -self.ccpp_robot.E
 
-                    # Only add detected obstacles
-                    for obs_x, obs_y in detected_obstacles:
-                        self.ccpp_robot.dynamic_obstacle_positions.add((obs_x, obs_y))
-                        # Mark as obstacle in CCPP grid only if detected and not visited
-                        if (0 <= obs_x < self.ccpp_robot.width and 0 <= obs_y < self.ccpp_robot.height and
-                                self.ccpp_robot.grid_state[obs_y, obs_x] != GridState.VISITED.value):
-                            self.ccpp_robot.grid_state[obs_y, obs_x] = GridState.OBSTACLE.value
-                            self.ccpp_robot.external_input[obs_y, obs_x] = -self.ccpp_robot.E
-
+                # ✅ DYNAMIC OBSTACLES: Now only sensor-detected positions
                 # Try normal movement (Priority template)
                 next_pos = self.ccpp_robot.select_next_position_with_priority()
 
@@ -342,7 +368,6 @@ class CCPPInBWaveEnvironment:
                                 # Update energy for return movement (0.5x cost) - NOT coverage
                                 self.update_energy_system(distance, is_coverage=False)
                                 self.total_travel_length += distance
-                                self.retreat_length += distance  # ✅ NEW: Track retreat distance
                             # Charge robot
                             self.charge_robot()
                             print(f"🔋 Robot charged at ({charging_pos.x}, {charging_pos.y})")
@@ -363,7 +388,6 @@ class CCPPInBWaveEnvironment:
                         self.total_travel_length += distance  # Distance-based
                         self.coverage_length += distance  # Coverage segment only
                         self.total_coverage_cells += 1  # Count each coverage task
-                        self.covered_positions.add((next_pos.y, next_pos.x))  # ✅ NEW: Add unique position
                         self.update_energy_system(distance, is_coverage=True)
 
                         # Update BWave UI map for visualization
@@ -405,7 +429,6 @@ class CCPPInBWaveEnvironment:
                                 # Update energy for backtrack movement (0.5x cost) - NOT coverage
                                 self.update_energy_system(distance, is_coverage=False)
                                 self.total_travel_length += distance
-                                self.retreat_length += distance  # ✅ NEW: Track backtrack as retreat
                                 # ✅ IMPORTANT: Don't mark visited cells as explored again during backtracking
                                 # Only mark truly unvisited cells
                                 if self.ccpp_robot.grid_state[pos.y, pos.x].item() == GridState.UNVISITED.value:
@@ -414,7 +437,6 @@ class CCPPInBWaveEnvironment:
                                     self.ui.map[pos.y][pos.x] = 'e'
                                     self.ui.task((pos.y, pos.x))
                                     self.total_coverage_cells += 1
-                                    self.covered_positions.add((pos.y, pos.x))  # ✅ NEW: Add unique position
                                     self.coverage_length += distance
                                 print(
                                     f"Backtrack step {i + 1}: ({pos.x}, {pos.y}) - Energy: {self.current_energy:.1f}")
@@ -459,7 +481,6 @@ class CCPPInBWaveEnvironment:
                                     # Update energy for backtrack movement (0.5x cost)
                                     self.update_energy_system(distance, is_coverage=False)
                                     self.total_travel_length += distance
-                                    self.retreat_length += distance  # ✅ NEW: Track force backtrack as retreat
 
                                     # Only mark truly unvisited cells
                                     if self.ccpp_robot.grid_state[pos.y, pos.x].item() == GridState.UNVISITED.value:
@@ -467,7 +488,6 @@ class CCPPInBWaveEnvironment:
                                         self.ccpp_robot.external_input[pos.y, pos.x] = 0.0
                                         self.ui.map[pos.y][pos.x] = 'e'
                                         self.total_coverage_cells += 1  # Count coverage task
-                                        self.covered_positions.add((pos.y, pos.x))  # ✅ NEW: Add unique position
                                         self.coverage_length += distance
 
                                     # Update UI visualization for each step
@@ -529,14 +549,7 @@ class CCPPInBWaveEnvironment:
         # 7. Final Results
         self.execute_time = time.time() - self.execute_time
         print("\n✅ CCPP Algorithm completed in BWave Environment!")
-
-        # ===== OUTPUT =====
-        print('\nCoverage:\t', self.coverage_length)
-        print('Advance:\t', self.advance_length)
-        print('Return:\t', self.retreat_length)
-        print('-' * 8)
-        print('Total Path Length:', self.total_travel_length)
-        print('Time: ', self.execute_time)
+        # ===== BWave Framework Metrics (theo đúng Paper) =====
         print('\n' + '=' * 50)
         print('BWAVE FRAMEWORK METRICS')
         print('=' * 50)
@@ -560,13 +573,6 @@ class CCPPInBWaveEnvironment:
         # 5. Execution Time
         print(f'5. Execution Time: {self.execute_time:.3f}s')
 
-        # 6. Coverage Rate (NEW)
-        cover_cells = len(self.covered_positions)  # ✅ NEW: Unique coverage cells only
-        if self.blank_cells > 0:
-            coverage_rate = (cover_cells / self.blank_cells) * 100
-            print(f'6. Coverage Rate: {coverage_rate:.2f}%')
-        else:
-            print('6. Coverage Rate: 0.00%')
         print('=' * 50)
         # Calculate final metrics for return value
         total_cells = COL_COUNT * ROW_COUNT
@@ -576,7 +582,8 @@ class CCPPInBWaveEnvironment:
         final_coverage_rate = visited_cells / accessible_cells if accessible_cells > 0 else 0
 
         # BWave overlap rate calculation
-        bwave_overlap_rate = (self.total_coverage_cells / self.total_free_cells - 1) * 100 if self.total_free_cells > 0 else 0
+        bwave_overlap_rate = (
+                                         self.total_coverage_cells / self.total_free_cells - 1) * 100 if self.total_free_cells > 0 else 0
 
         # Keep window open for result viewing
         print("🖼️  Press any key to close visualization...")
@@ -606,11 +613,9 @@ class CCPPInBWaveEnvironment:
             'execution_time': self.execute_time,
             'total_steps': step
         }
-
-
 def main():
     parser = argparse.ArgumentParser(description='CCPP Algorithm in BWave Environment')
-    parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt', help='Path to map file')
+    parser.add_argument('--map', type=str, default='map/experiment/scenario1/map_1.txt',help='Path to map file')
     parser.add_argument('--energy', type=float, default=1000,
                         help='Robot energy capacity')
     parser.add_argument('--speed', type=float, default=0.5, help='Dynamic obstacles speed factor')

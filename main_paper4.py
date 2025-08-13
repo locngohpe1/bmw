@@ -64,7 +64,6 @@ MIN_PROB_THRESHOLD = 3
 dynamic_obs_list = []
 dynamic_obs_list.append(DynamicObstacle((3, 6), (2, 1), 4, 10))
 
-
 def check_valid_pos(pos):
     row, col = pos
     if row < 0 or row >= ROW_COUNT: return False

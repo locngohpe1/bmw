@@ -115,8 +115,6 @@ class LogicAlgorithm:
         _, cur_dist = a_star_search(graph, cur_pos, goal)
         for nb in cur_neighbors:
             _, nb_dist = a_star_search(graph, nb, goal)
-            # delta_dist.append((cur_dist - nb_dist, nb))
-            # delta_dist[nb] = cur_dist - nb_dist
             if cur_dist - nb_dist > 0:
                 delta_dist[nb] = 1
             else: delta_dist[nb] = 0
@@ -150,20 +148,6 @@ class LogicAlgorithm:
         self.state = Q.DEADLOCK
         return []  # Return empty to trigger deadlock handling in main loop
     
-    # def boustrophedon_moving(self, current_pos):
-    #     row_count, col_count = len(self.weight_map), len(self.weight_map[0])
-    #     (x, y) = current_pos
-
-    #     if (x + 1) < row_count and self.weight_map[x + 1][y] == 0:
-    #         return [(x + 1, y)]
-    #     if (x - 1) >= 0 and self.weight_map[x - 1][y] == 0:
-    #         return [(x - 1, y)]
-    #     if y + 1 < col_count and self.weight_map[x][y+1] == 0:
-    #         return [(x, y + 1)]
-    #     if y - 1 > 0 and self.weight_map[x][y-1] == 0:
-    #         return [(x, y - 1)]
-    #     return []
-
     def boustrophedon_moving(self, current_pos):
         row_count, col_count = len(self.weight_map), len(self.weight_map[0])
         (x, y) = current_pos

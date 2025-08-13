@@ -40,8 +40,6 @@ dynamic_wait_count = 0
 dynamic_obstacles = None
 execute_time = time.time()
 total_coverage_cells = 0
-covered_positions = set()  # ✅ NEW: Track unique covered positions (no overlap)
-blank_cells = 0  # ✅ NEW: Track initial blank cells before dynamic obstacles
 total_free_cells = 0
 
 special_areas = get_special_area(ENVIRONMENT)
@@ -213,13 +211,12 @@ class Robot:
         return min(wp, key=self.travel_cost)
 
     def task(self):
-        global total_coverage_cells, covered_positions  # ✅ NEW: Use covered_positions set
+        global total_coverage_cells
         current_pos = self.current_pos
         self.map[current_pos] = 'e'
         self.logic.update_explored(current_pos)
         ui.task(current_pos)
         total_coverage_cells += 1
-        covered_positions.add(current_pos)  # ✅ NEW: Add to set (auto handles duplicates)
 
     def move_to(self, pos):
         global total_travel_length, coverage_length, retreat_length, advance_length
@@ -547,9 +544,9 @@ def main():
     robot.set_map(ENVIRONMENT)
     robot.set_special_areas(special_areas)
 
-    global total_free_cells, blank_cells
-    blank_cells = np.sum(ENVIRONMENT == 0)  # ✅ NEW: Calculate before dynamic obstacles
+    global total_free_cells
     total_free_cells = np.sum(ENVIRONMENT == 0)
+
     dynamic_obstacles = DynamicObstaclesManager(ui, num_obstacles=0, speed_factor=args.speed)
 
     if hasattr(ui, 'dynamic_obstacles') and ui.dynamic_obstacles:
@@ -588,14 +585,6 @@ def main():
     print(f'3. Number of Returns: {return_charge_count}')
     print(f'4. Number of Deadlocks: {deadlock_count} (extreme: {extreme_deadlock_count})')
     print(f'5. Execution Time: {execute_time:.3f}s')
-    # 6. Coverage Rate (NEW)
-    cover_cells = len(covered_positions)  # ✅ NEW: Unique coverage cells only
-    if blank_cells > 0:
-        coverage_rate = (cover_cells / blank_cells) * 100
-        print(f'6. Coverage Rate: {coverage_rate:.2f}%')
-    else:
-        print('6. Coverage Rate: 0.00%')
-
     print('=' * 50)
 
 if __name__ == "__main__":
