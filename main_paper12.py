@@ -23,7 +23,7 @@ parser.add_argument('--energy', type=float, default=1000, help='Energy capacity'
 args = parser.parse_args()
 
 ENERGY_CAPACITY = args.energy
-FPS = 40
+FPS = 80
 
 ui = Grid_Map()
 ui.read_map(args.map)
@@ -40,8 +40,8 @@ dynamic_wait_count = 0
 dynamic_obstacles = None
 execute_time = time.time()
 total_coverage_cells = 0
-covered_positions = set()  # ✅ NEW: Track unique covered positions (no overlap)
-blank_cells = 0  # ✅ NEW: Track initial blank cells before dynamic obstacles
+covered_positions = set()
+blank_cells = 0
 total_free_cells = 0
 
 special_areas = get_special_area(ENVIRONMENT)

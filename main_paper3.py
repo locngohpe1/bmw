@@ -206,7 +206,7 @@ class CCPPInBWaveEnvironment:
         print("  ESC: Quit")
         print(f"🤖 Robot starting from charging station at ({start_x}, {start_y})")
 
-        FPS = 40
+        FPS = 80
         clock = pg.time.Clock()
         run = True
         pause = False
