@@ -96,7 +96,7 @@ def train_obstacle_classifier():
 
     classifier = ObstacleClassifier(use_gpu=use_gpu)
     # Tăng training epochs và improve learning strategy
-    classifier.train(train_loader, val_loader, num_epochs=25, learning_rate=0.001)  # Tăng từ 10 lên 25 epochs
+    classifier.train(train_loader, val_loader, num_epochs=25, learning_rate=0.001)  # 25 epochs
     print("=== TRAINING COMPLETED ===")
     print("Model saved to: models/googlenet_obstacle_classifier.pth")
 

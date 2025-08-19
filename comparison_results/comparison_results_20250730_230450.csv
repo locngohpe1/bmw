@@ -1,4 +1,0 @@
-Map,Algorithm,Coverage Length,Overlap Times,Execution Time,Extreme Deadlocks,Return Count
-test_map_20x20_obs20.txt,Project A,0.0,0,0.041635990142822266,0,1
-test_map_20x20_obs20.txt,Project D,10.0,0,726.5369136333466,0,1
-test_map_20x20_obs20.txt,Project C,1000.0,0,0.04407358169555664,0,1

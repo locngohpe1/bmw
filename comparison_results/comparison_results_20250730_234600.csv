@@ -1,4 +1,0 @@
-Map,Algorithm,Coverage Length,Overlap Times,Execution Time,Extreme Deadlocks,Return Count
-denmark.txt,Project A,0.0,3,0.3166995048522949,0,1
-denmark.txt,Project D,0.0,2,0.47337961196899414,0,2
-denmark.txt,Project C,0.0,3,0.5587339401245117,0,1

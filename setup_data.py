@@ -114,44 +114,44 @@ def create_static_pattern_2d():
     # Tạo nhiều variation furniture types với distinctive patterns
     furniture_types = np.random.randint(0, 6)  # Tăng từ 3 lên 6 types
     base_colors = [(100, 90, 80), (120, 100, 80), (90, 80, 70), (110, 95, 85)]
-    base_color = base_colors[np.random.randint(0, len(base_colors))]
+    select_color = base_colors[np.random.randint(0, len(base_colors))]
 
     if furniture_types == 0:  # Table
-        cv2.rectangle(img, (40, 80), (184, 120), base_color, -1)
-        cv2.rectangle(img, (50, 120), (60, 160), safe_color(base_color, -20), -1)
-        cv2.rectangle(img, (174, 120), (184, 160), safe_color(base_color, -20), -1)
+        cv2.rectangle(img, (40, 80), (184, 120), select_color, -1)
+        cv2.rectangle(img, (50, 120), (60, 160), safe_color(select_color, -20), -1)
+        cv2.rectangle(img, (174, 120), (184, 160), safe_color(select_color, -20), -1)
 
     elif furniture_types == 1:  # Chair
-        cv2.rectangle(img, (60, 100), (164, 130), base_color, -1)
-        cv2.rectangle(img, (60, 60), (164, 100), safe_color(base_color, -20), -1)
-        cv2.rectangle(img, (65, 130), (75, 170), safe_color(base_color, -30), -1)
-        cv2.rectangle(img, (154, 130), (164, 170), safe_color(base_color, -30), -1)
+        cv2.rectangle(img, (60, 100), (164, 130), select_color, -1)
+        cv2.rectangle(img, (60, 60), (164, 100), safe_color(select_color, -20), -1)
+        cv2.rectangle(img, (65, 130), (75, 170), safe_color(select_color, -30), -1)
+        cv2.rectangle(img, (154, 130), (164, 170), safe_color(select_color, -30), -1)
 
     elif furniture_types == 2:  # Cabinet
-        cv2.rectangle(img, (50, 70), (174, 150), base_color, -1)
-        cv2.line(img, (112, 75), (112, 145), safe_color(base_color, -40), 3)
-        cv2.circle(img, (80, 110), 3, safe_color(base_color, 50), -1)
-        cv2.circle(img, (144, 110), 3, safe_color(base_color, 50), -1)
+        cv2.rectangle(img, (50, 70), (174, 150), select_color, -1)
+        cv2.line(img, (112, 75), (112, 145), safe_color(select_color, -40), 3)
+        cv2.circle(img, (80, 110), 3, safe_color(select_color, 50), -1)
+        cv2.circle(img, (144, 110), 3, safe_color(select_color, 50), -1)
 
     elif furniture_types == 3:  # Shelf với nhiều geometric patterns
-        cv2.rectangle(img, (40, 60), (184, 80), base_color, -1)
-        cv2.rectangle(img, (40, 100), (184, 120), base_color, -1)
-        cv2.rectangle(img, (40, 140), (184, 160), base_color, -1)
+        cv2.rectangle(img, (40, 60), (184, 80), select_color, -1)
+        cv2.rectangle(img, (40, 100), (184, 120), select_color, -1)
+        cv2.rectangle(img, (40, 140), (184, 160), select_color, -1)
         for x in range(50, 174, 30):
-            cv2.line(img, (x, 60), (x, 160), safe_color(base_color, -50), 2)
+            cv2.line(img, (x, 60), (x, 160), safe_color(select_color, -50), 2)
 
     elif furniture_types == 4:  # Desk với sharp edges
-        cv2.rectangle(img, (30, 90), (194, 130), base_color, -1)
-        cv2.rectangle(img, (35, 130), (45, 170), safe_color(base_color, -25), -1)
-        cv2.rectangle(img, (179, 130), (189, 170), safe_color(base_color, -25), -1)
+        cv2.rectangle(img, (30, 90), (194, 130), select_color, -1)
+        cv2.rectangle(img, (35, 130), (45, 170), safe_color(select_color, -25), -1)
+        cv2.rectangle(img, (179, 130), (189, 170), safe_color(select_color, -25), -1)
         # Thêm keyboard/monitor geometric shapes
-        cv2.rectangle(img, (70, 95), (120, 110), safe_color(base_color, -40), -1)
-        cv2.rectangle(img, (130, 95), (170, 125), safe_color(base_color, -30), -1)
+        cv2.rectangle(img, (70, 95), (120, 110), safe_color(select_color, -40), -1)
+        cv2.rectangle(img, (130, 95), (170, 125), safe_color(select_color, -30), -1)
 
     else:  # TV stand với complex geometry
-        cv2.rectangle(img, (50, 80), (174, 100), base_color, -1)
-        cv2.rectangle(img, (60, 100), (164, 140), safe_color(base_color, -15), -1)
-        cv2.rectangle(img, (70, 140), (154, 160), safe_color(base_color, -25), -1)
+        cv2.rectangle(img, (50, 80), (174, 100), select_color, -1)
+        cv2.rectangle(img, (60, 100), (164, 140), safe_color(select_color, -15), -1)
+        cv2.rectangle(img, (70, 140), (154, 160), safe_color(select_color, -25), -1)
         # TV screen (very geometric)
         cv2.rectangle(img, (80, 60), (144, 80), (30, 30, 30), -1)
 
@@ -160,11 +160,11 @@ def create_static_pattern_2d():
 
     # Thêm nhiều geometric lines
     for y in range(70, 160, 4):  # Denser lines
-        cv2.line(img, (45, y), (179, y), safe_color(base_color, -30), 1)
+        cv2.line(img, (45, y), (179, y), safe_color(select_color, -30), 1)
 
     # Thêm cross-hatch pattern cho furniture
     for x in range(50, 174, 8):
-        cv2.line(img, (x, 65), (x, 165), safe_color(base_color, -40), 1)
+        cv2.line(img, (x, 65), (x, 165), safe_color(select_color, -40), 1)
 
     # Tạo COLD furniture colors: LOW Red, MAXIMUM Green, LOW Blue
     img[:, :, 2] = np.clip(img[:, :, 2] - 50, 0, 255)  # Giảm RED mạnh
@@ -203,7 +203,7 @@ def create_dynamic_pattern_2d():
         leg_color = (80, 100, 120)
         cv2.rectangle(img, (x_center - 18, y_center + 50), (x_center + 18, y_center + 100), leg_color, -1)
 
-    elif pose_type == 1:  # Walking human (more motion)
+    elif pose_type == 1:  # Walking human
         head_color = (235, 195, 155)
         cv2.ellipse(img, (x_center, y_center - 55), (28, 30), 15, 0, 360, head_color, -1)  # Tilted head
 
