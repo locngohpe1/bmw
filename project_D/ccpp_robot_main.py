@@ -7,6 +7,7 @@ from typing import List, Tuple, Optional, Dict
 from dataclasses import dataclass
 from enum import Enum
 
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class GridState(Enum):
     UNVISITED = 0

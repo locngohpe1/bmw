@@ -177,7 +177,7 @@ class DynamicObstacleHandler:
             if t0 < min_collision_time and t0 > 0:
                 min_collision_time = t0
 
-                Lr = 0.5
+                Lr = 1
                 Sr = vr_mag * t0 - Lr
 
                 if Sr > 0:

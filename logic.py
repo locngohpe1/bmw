@@ -12,7 +12,7 @@ def init_weight_map_mask(row, col):
     weight_map = np.zeros([row, col])
     for i, row_value in enumerate(weight_map):
         for j, col_value in enumerate(row_value):
-            weight_map[i][j] = col - j
+            weight_map[i][j] = col - j + 1
     return weight_map
 
 class Logic:

@@ -3,6 +3,7 @@ import pygame as pg
 import copy
 import colorsys
 import random
+import time
 
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
@@ -15,7 +16,7 @@ LIGHT_BLUE = (0, 191, 255)
 BROWN = (76, 1, 33)
 LIGHT_ORANGE = (255, 140, 0)
 
-EPSILON = 8
+EPSILON = 7# pre=7
 BORDER = 1
 INFO_BAR_HEIGHT = 30
 GAP = 3
@@ -91,6 +92,13 @@ class Grid_Map:
             for event in pg.event.get():
                 if event.type == pg.QUIT:
                     done = True
+                elif event.type == pg.KEYDOWN:
+                    if event.key == pg.K_RETURN:
+                        timestamp = int(time.time())
+                        filename = f'tmp/screenshot_{timestamp}.png'
+                        pg.image.save(self.grid_surface, filename)
+                        print(f"Screenshot saved: {filename}")  # Optional: In ra console để
+
                 elif event.type == pg.MOUSEBUTTONDOWN:
                     mouse_pressed = pg.mouse.get_pressed()
                     keys = pg.key.get_pressed()
@@ -99,7 +107,7 @@ class Grid_Map:
                         if keys[pg.K_LSHIFT] or keys[pg.K_RSHIFT]:
                             if self.check_valid_pos((row, col)) == False: continue
                             if self.map[row][col] == 0 and (row, col) != self.battery_pos:
-                                shape = [(0, 0), (1, 0), (-1, 0)]
+                                shape = [(0, 0), (1, 0)]
                                 min_r = min(dr for dr, _ in shape)
                                 max_r = max(dr for dr, _ in shape)
                                 min_c = min(dc for _, dc in shape)

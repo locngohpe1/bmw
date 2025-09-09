@@ -17,13 +17,13 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 from optimization import get_special_area, return_path_matrix, get_return_path
 
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
-parser.add_argument('--speed', type=float, default=0.1, help='Speed of dynamic obstacles')
+parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
+parser.add_argument('--speed', type=float, default=1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
 
 ENERGY_CAPACITY = args.energy
-FPS = 80
+FPS = 40
 
 ui = Grid_Map()
 ui.read_map(args.map)
@@ -46,6 +46,26 @@ total_free_cells = 0
 
 special_areas = get_special_area(ENVIRONMENT)
 return_matrix = return_path_matrix(ENVIRONMENT, battery_pos)
+
+
+def save_map(self, output_file):
+    map = self.map
+    with open(output_file, "w", encoding="utf-8") as f:
+        col_count, row_count = len(map[0]), len(map) if map else (0, 0)
+        f.write(str(col_count) + ' ' + str(row_count) + '\n')
+        for row in map:
+            line = [str(value) for value in row]
+            line = " ".join(line)
+            f.write(line + '\n')
+
+        # Append dynamic obstacles section
+        f.write("DYNAMIC OBSTACLES\n")
+        for obs in self.dynamic_obstacles:
+            pos = obs['pos']
+            id_str = obs['id']
+            size_str = obs['size_str']  # e.g., "2x1"
+            shape_str = ",".join([f"({dr},{dc})" for dr, dc in obs['shape']])
+            f.write(f"DYNAMIC {id_str} {pos[0]} {pos[1]} {size_str} {shape_str}\n")
 
 def check_valid_pos(pos):
     row, col = pos
@@ -453,7 +473,7 @@ class Robot:
                         self.classified_obstacles[pos_key] = (class_name, confidence)
 
                     elif class_name == 'static':
-                        # Static obstacles should already be known in map - log for debugging only
+                        # Static obstacles - Update map
                         self.classified_obstacles[pos_key] = (class_name, confidence)
 
         self.previous_camera_image = current_image
@@ -501,7 +521,7 @@ class Robot:
             if isinstance(obstacle_size, tuple):
                 obstacle_size = max(obstacle_size)
 
-            wait_time = 1.0 + (obstacle_size - 1.0) * 0.5
+            wait_time = 1 + (obstacle_size - 1.0) * 0.5
             self.waiting = True
             self.wait_time = wait_time
             self.wait_start_time = time.time()
@@ -584,7 +604,6 @@ def main():
         print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')
     else:
         print('2. Overlap Rate: 0.00%')
-
     print(f'3. Number of Returns: {return_charge_count}')
     print(f'4. Number of Deadlocks: {deadlock_count} (extreme: {extreme_deadlock_count})')
     print(f'5. Execution Time: {execute_time:.3f}s')
@@ -592,6 +611,8 @@ def main():
     cover_cells = len(covered_positions)  # ✅ NEW: Unique coverage cells only
     if blank_cells > 0:
         coverage_rate = (cover_cells / blank_cells) * 100
+        if coverage_rate > 100:
+            coverage_rate = 100
         print(f'6. Coverage Rate: {coverage_rate:.2f}%')
     else:
         print('6. Coverage Rate: 0.00%')

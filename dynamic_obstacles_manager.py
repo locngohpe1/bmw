@@ -4,9 +4,8 @@ import random
 import math
 from grid_map import EPSILON
 
-
 class DynamicObstaclesManager:
-    def __init__(self, grid_map, num_obstacles=2, speed_factor=0.5):
+    def __init__(self, grid_map, num_obstacles=0, speed_factor=0.5):
         self.grid_map = grid_map
         self.obstacles = []
         self.epsilon = EPSILON
@@ -15,7 +14,7 @@ class DynamicObstaclesManager:
         self.speed_factor = speed_factor
 
         self.human_icon = pg.image.load('assets/human_icon3.png')
-        self.human_icon = pg.transform.scale(self.human_icon, (16, 26))
+        self.human_icon = pg.transform.scale(self.human_icon, (16, 20))
 
     def initialize_obstacles(self):
         if hasattr(self.grid_map, 'dynamic_obstacles'):
@@ -23,32 +22,15 @@ class DynamicObstaclesManager:
                 pos = manual_obs['pos']
 
                 base_velocity = (
-                    random.uniform(-0.03, 0.03),
-                    random.uniform(-0.03, 0.03)
-                )
-
-                max_attempts = 30
-                attempt = 0
-                while (abs(base_velocity[0]) < 0.02 and abs(base_velocity[1]) < 0.02) and attempt < max_attempts:
-                    base_velocity = (
-                        random.uniform(-0.03, 0.03),
-                        random.uniform(-0.03, 0.03)
-                    )
-                    attempt += 1
-
-                if abs(base_velocity[0]) < 0.02 and abs(base_velocity[1]) < 0.02:
-                    base_velocity = (0.025, 0.025)
-
-                velocity = (
-                    base_velocity[0] * max(self.speed_factor, 0.1),
-                    base_velocity[1] * max(self.speed_factor, 0.1)
+                    random.uniform(-0.5, 0.5),
+                    random.uniform(-0.5, 0.5)
                 )
 
                 obstacle = {
                     'id': manual_obs['id'],
                     'pos': pos,
-                    'velocity': velocity,
-                    'size': manual_obs.get('size', 1.0),
+                    'velocity': base_velocity,
+                    'size': manual_obs.get(2,1),
                     'color': (255, 0, 0),
                     'exact_pos': (pos[0] + 0.5, pos[1] + 0.5)
                 }
@@ -66,6 +48,21 @@ class DynamicObstaclesManager:
                         self.grid_map.map[row, col] == 'd'):
                     self.grid_map.map[row, col] = 0
 
+    def _has_static_collision(self, cell, size, map_height, map_width):
+        collision = False
+        radius = int(max(size) / 2) if isinstance(size, tuple) else int(size / 2)
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                check_row = cell[0] + dr
+                check_col = cell[1] + dc
+                if 0 <= check_row < map_height and 0 <= check_col < map_width:
+                    if self.grid_map.map[check_row, check_col] in (1, 'o'):
+                        collision = True
+                        break
+            if collision:
+                break
+        return collision
+
     def update(self, delta_time):
         if not self.obstacles:
             return
@@ -76,43 +73,47 @@ class DynamicObstaclesManager:
         for obstacle in self.obstacles:
             old_pos = obstacle['pos']
             old_exact = obstacle['exact_pos']
-
-            new_x = old_exact[0] + obstacle['velocity'][0] * delta_time * 15
-            new_y = old_exact[1] + obstacle['velocity'][1] * delta_time * 15
-
+            vx, vy = obstacle['velocity']
             size = obstacle.get('size', 1.0)
-            obstacle_radius = max(size) / 2 if isinstance(size, tuple) else size / 2
+            radius = max(size) / 2 if isinstance(size, tuple) else size / 2
+            dt = delta_time * 15  # Speed multiplier
 
-            if new_x - obstacle_radius < 0 or new_x + obstacle_radius >= map_height:
-                obstacle['velocity'] = (-obstacle['velocity'][0], obstacle['velocity'][1])
+            # Move and reflect in x-direction (rows, vertical movement)
+            new_x = old_exact[0] + vx * dt
+            # Border check and reflection for x
+            if new_x - radius < 0:
+                new_x = radius
+                vx = -vx
+            elif new_x + radius >= map_height:
+                new_x = map_height - radius
+                vx = -vx
+            # Static collision check for x-move only
+            temp_cell = (int(new_x), int(old_exact[1]))
+            if self._has_static_collision(temp_cell, size, map_height, map_width):
+                vx = -vx
+                # Clamp to approximate non-penetration (simple: revert to old_x, next frame moves reflected)
                 new_x = old_exact[0]
 
-            if new_y - obstacle_radius < 0 or new_y + obstacle_radius >= map_width:
-                obstacle['velocity'] = (obstacle['velocity'][0], -obstacle['velocity'][1])
+            # Move and reflect in y-direction (columns, horizontal movement)
+            new_y = old_exact[1] + vy * dt
+            # Border check and reflection for y
+            if new_y - radius < 0:
+                new_y = radius
+                vy = -vy
+            elif new_y + radius >= map_width:
+                new_y = map_width - radius
+                vy = -vy
+            # Static collision check for y-move only (using updated new_x)
+            temp_cell = (int(new_x), int(new_y))
+            if self._has_static_collision(temp_cell, size, map_height, map_width):
+                vy = -vy
+                # Clamp to old_y
                 new_y = old_exact[1]
 
-            new_cell = (int(new_x), int(new_y))
-            collision_with_static = False
-            radius = int(max(size) / 2) if isinstance(size, tuple) else int(size / 2)
-            for dr in range(-radius, radius + 1):
-                for dc in range(-radius, radius + 1):
-                    check_row = new_cell[0] + dr
-                    check_col = new_cell[1] + dc
-                    if 0 <= check_row < map_height and 0 <= check_col < map_width:
-                        if self.grid_map.map[check_row, check_col] in (1, 'o'):
-                            collision_with_static = True
-                            break
-                if collision_with_static:
-                    break
-
-            if collision_with_static and new_cell != old_pos:
-                obstacle['velocity'] = (-obstacle['velocity'][0], -obstacle['velocity'][1])
-                new_x = old_exact[0]
-                new_y = old_exact[1]
-                new_cell = old_pos
-
+            # Update final position and velocity
             obstacle['exact_pos'] = (new_x, new_y)
             obstacle['pos'] = (int(new_x), int(new_y))
+            obstacle['velocity'] = (vx, vy)
 
             if old_pos != obstacle['pos']:
                 self._clear_obstacle_cells(old_pos, size)

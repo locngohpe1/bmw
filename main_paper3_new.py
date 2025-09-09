@@ -610,7 +610,7 @@ class CCPPInBWaveEnvironment:
 
 def main():
     parser = argparse.ArgumentParser(description='CCPP Algorithm in BWave Environment')
-    parser.add_argument('--map', type=str, default='map/real_map/scioto1.txt', help='Path to map file')
+    parser.add_argument('--map', type=str, default='map/real_map/scioto2.txt', help='Path to map file')
     parser.add_argument('--energy', type=float, default=1000,
                         help='Robot energy capacity')
     parser.add_argument('--speed', type=float, default=0.5, help='Dynamic obstacles speed factor')
