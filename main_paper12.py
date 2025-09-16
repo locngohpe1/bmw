@@ -17,7 +17,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 from optimization import get_special_area, return_path_matrix, get_return_path
 
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/mosquito.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/ribera.txt', help='Path to map file')
 parser.add_argument('--speed', type=float, default=1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
@@ -43,6 +43,7 @@ total_coverage_cells = 0
 covered_positions = set()
 blank_cells = 0
 total_free_cells = 0
+count_cell_go_through = 0
 
 special_areas = get_special_area(ENVIRONMENT)
 return_matrix = return_path_matrix(ENVIRONMENT, battery_pos)
@@ -233,13 +234,14 @@ class Robot:
         return min(wp, key=self.travel_cost)
 
     def task(self):
-        global total_coverage_cells, covered_positions  # ✅ NEW: Use covered_positions set
+        global total_coverage_cells, covered_positions, count_cell_go_through  # ✅ NEW: Use covered_positions set
         current_pos = self.current_pos
         self.map[current_pos] = 'e'
         self.logic.update_explored(current_pos)
         ui.task(current_pos)
         total_coverage_cells += 1
         covered_positions.add(current_pos)  # ✅ NEW: Add to set (auto handles duplicates)
+        count_cell_go_through += 1  # ✅ FIXED: Track coverage moves for correct overlap calculation
 
     def move_to(self, pos):
         global total_travel_length, coverage_length, retreat_length, advance_length
@@ -599,9 +601,11 @@ def main():
     print('=' * 50)
     print(f'1. Total Path Length: {total_travel_length:.2f}')
 
-    if total_free_cells > 0:
-        bwave_overlap_rate = (total_coverage_cells / total_free_cells - 1) * 100
-        print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')
+    # ✅ FIXED: Use correct overlap formula to prevent negative values
+    explored_cells = np.sum(robot.map == 'e')
+    if explored_cells > 0:
+        overlap_rate = (count_cell_go_through / explored_cells - 1) * 100
+        print(f'2. Overlap Rate: {overlap_rate:.2f}%')
     else:
         print('2. Overlap Rate: 0.00%')
     print(f'3. Number of Returns: {return_charge_count}')

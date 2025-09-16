@@ -40,6 +40,9 @@ class MultiRobotCCPP:
             robot.grid_state = self.shared_grid_state
             robot.external_input = self.shared_external_input
             # Each robot maintains individual neural_activity (paper design)
+            
+            # ✅ FIXED: Initialize overlap tracking for each robot
+            robot.count_cell_go_through = 1  # Starting position counts
 
             self.robots.append(robot)
 
@@ -207,6 +210,7 @@ class MultiRobotCCPP:
                     robot.path.append(next_pos)
                     self.shared_grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                     self.shared_external_input[next_pos.y, next_pos.x] = 0.0
+                    robot.count_cell_go_through += 1  # ✅ FIXED: Track coverage moves
                     robots_moved = True
                     robot_statistics[robot_id]['path_length'] += 1
 
@@ -255,6 +259,7 @@ class MultiRobotCCPP:
                                     if self.shared_grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                                         self.shared_grid_state[pos.y, pos.x] = GridState.VISITED.value
                                         self.shared_external_input[pos.y, pos.x] = 0.0
+                                        robot.count_cell_go_through += 1  # ✅ FIXED: Track coverage moves during backtrack
                                 robots_moved = True
                                 robot_statistics[robot_id]['path_length'] += len(path) - 1
 
@@ -279,13 +284,21 @@ class MultiRobotCCPP:
 
             step += 1
 
+        # ✅ FIXED: Calculate overlap rate for multi-robot system
+        total_coverage_moves = sum(robot.count_cell_go_through for robot in self.robots)
+        explored_cells = torch.sum(self.shared_grid_state == GridState.VISITED.value).item()
+        overlap_rate = (total_coverage_moves / explored_cells - 1) * 100 if explored_cells > 0 else 0.0
+
         return {
             'total_steps': step,
             'coverage_rate': coverage_history[-1] if coverage_history else 0,
             'coverage_history': coverage_history,
             'robot_statistics': robot_statistics,
             'total_path_length': sum(stats['path_length'] for stats in robot_statistics.values()),
-            'total_deadlocks': sum(stats['deadlocks'] for stats in robot_statistics.values())
+            'total_deadlocks': sum(stats['deadlocks'] for stats in robot_statistics.values()),
+            'overlap_rate': overlap_rate,  # ✅ FIXED: Add overlap rate for multi-robot
+            'total_coverage_moves': total_coverage_moves,  # For debugging
+            'explored_cells': explored_cells  # For debugging
         }
 
     def visualize_multi_robot(self, save_path: str = None):

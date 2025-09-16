@@ -283,8 +283,12 @@ class MCTA:
     def calculate_performance_metrics(self) -> Tuple[float, float, float]:
         mileages = [u.total_flight_mileage for u in self.uavs]  # Local definition
         Cr = (len(self.global_covered) / self.passable_area) * 100 if self.passable_area > 0 else 0.0
+        
+        # ✅ FIXED: Use correct overlap formula to prevent negative values
         total_visits = sum(len(u.trajectory) for u in self.uavs)
-        Rr = ((total_visits - len(self.global_covered)) / total_visits) * 100 if total_visits > 0 else 0.0
+        explored_cells = len(self.global_covered)
+        Rr = (total_visits / explored_cells - 1) * 100 if explored_cells > 0 else 0.0
+        
         mean_mileage = sum(mileages) / self.v if self.v > 0 and mileages else 0.0
         Df = sum(abs(u.total_flight_mileage - mean_mileage) for u in self.uavs) / self.v if self.v > 0 else 0.0
         return Cr, Rr, Df

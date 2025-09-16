@@ -36,6 +36,7 @@ class CCPPInBWaveEnvironment:
         self.total_free_cells = 0
         self.covered_positions = set()  # ✅ NEW: Track unique covered positions (no overlap)
         self.blank_cells = 0  # ✅ NEW: Track initial blank cells before dynamic obstacles
+        self.count_cell_go_through = 0  # ✅ FIXED: Track coverage moves for correct overlap calculation
 
     def convert_bwave_to_ccpp_map(self, bwave_map, width, height):
         """Convert BWave map format to CCPP format"""
@@ -160,6 +161,7 @@ class CCPPInBWaveEnvironment:
         self.ccpp_robot.external_input[start_y, start_x] = 0.0
         self.ui.map[start_y][start_x] = 'e'
         self.total_coverage_cells = 1  # Starting position counts as first coverage
+        self.count_cell_go_through = 1  # ✅ FIXED: Initialize coverage moves counter
         self.ui.task((start_y, start_x))  # Mark in UI as explored
         print(f"🤖 CCPP Robot initialized at ({start_x}, {start_y}) - marked as VISITED")
         print(f"🧠 Initial neural activity: {self.ccpp_robot.neural_activity[start_y, start_x].item():.2f}")
@@ -339,6 +341,9 @@ class CCPPInBWaveEnvironment:
                                 self.ccpp_robot.position = pos
                                 self.ccpp_robot.path.append(pos)
 
+                                # ✅ FIXED: Count ALL movements for overlap calculation
+                                self.count_cell_go_through += 1  # Track every movement including return to charge
+
                                 # Update energy for return movement (0.5x cost) - NOT coverage
                                 self.update_energy_system(distance, is_coverage=False)
                                 self.total_travel_length += distance
@@ -364,6 +369,7 @@ class CCPPInBWaveEnvironment:
                         self.coverage_length += distance  # Coverage segment only
                         self.total_coverage_cells += 1  # Count each coverage task
                         self.covered_positions.add((next_pos.y, next_pos.x))  # ✅ NEW: Add unique position
+                        self.count_cell_go_through += 1  # ✅ FIXED: Track coverage moves for correct overlap calculation
                         self.update_energy_system(distance, is_coverage=True)
 
                         # Update BWave UI map for visualization
@@ -401,6 +407,9 @@ class CCPPInBWaveEnvironment:
 
                                 self.ccpp_robot.position = pos
                                 self.ccpp_robot.path.append(pos)
+
+                                # ✅ FIXED: Count ALL movements for overlap calculation
+                                self.count_cell_go_through += 1  # Track every movement including backtrack
 
                                 # Update energy for backtrack movement (0.5x cost) - NOT coverage
                                 self.update_energy_system(distance, is_coverage=False)
@@ -455,6 +464,9 @@ class CCPPInBWaveEnvironment:
                                     # Move robot step by step
                                     self.ccpp_robot.position = pos
                                     self.ccpp_robot.path.append(pos)
+
+                                    # ✅ FIXED: Count ALL movements for overlap calculation
+                                    self.count_cell_go_through += 1  # Track every movement including forced backtrack
 
                                     # Update energy for backtrack movement (0.5x cost)
                                     self.update_energy_system(distance, is_coverage=False)
@@ -544,10 +556,11 @@ class CCPPInBWaveEnvironment:
         # 1. Total Path Length (distance-based như BWave gốc)
         print(f'1. Total Path Length: {self.total_travel_length:.2f}')
 
-        # 2. Overlap Rate
-        if self.total_free_cells > 0:
-            bwave_overlap_rate = (self.total_coverage_cells / self.total_free_cells - 1) * 100
-            print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')
+        # 2. Overlap Rate - ✅ FIXED: Use correct formula to prevent negative values
+        explored_cells = np.sum(self.ui.map == 'e')
+        if explored_cells > 0:
+            overlap_rate = (self.count_cell_go_through / explored_cells - 1) * 100
+            print(f'2. Overlap Rate: {overlap_rate:.2f}%')
         else:
             print('2. Overlap Rate: 0.00%')
 
@@ -574,11 +587,8 @@ class CCPPInBWaveEnvironment:
         visited_cells = torch.sum(self.ccpp_robot.grid_state == GridState.VISITED.value).item()
         accessible_cells = total_cells - obstacle_cells
         final_coverage_rate = visited_cells / accessible_cells if accessible_cells > 0 else 0
-
-        # BWave overlap rate calculation
-        bwave_overlap_rate = (self.total_coverage_cells / self.total_free_cells - 1) * 100 if self.total_free_cells > 0 else 0
-
-        # Keep window open for result viewing
+        explored_cells = np.sum(self.ui.map == 'e')
+        bwave_overlap_rate = (self.count_cell_go_through / explored_cells - 1) * 100 if explored_cells > 0 else 0
         print("🖼️  Press any key to close visualization...")
         waiting = True
         while waiting:
@@ -610,7 +620,7 @@ class CCPPInBWaveEnvironment:
 
 def main():
     parser = argparse.ArgumentParser(description='CCPP Algorithm in BWave Environment')
-    parser.add_argument('--map', type=str, default='map/real_map/scioto1.txt', help='Path to map file')
+    parser.add_argument('--map', type=str, default='map/experiment/scenario4/map_4.txt', help='Path to map file')
     parser.add_argument('--energy', type=float, default=1000,
                         help='Robot energy capacity')
     parser.add_argument('--speed', type=float, default=0.5, help='Dynamic obstacles speed factor')

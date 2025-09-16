@@ -52,6 +52,9 @@ class CCPPRobot:
         self.position = Position(0, 0)
         self.backtrack_list = []
         self.path = [self.position]
+        
+        # ✅ FIXED: Add overlap tracking for correct metrics
+        self.count_cell_go_through = 1  # Starting position counts as first coverage move
 
         # 8-directional movement as in paper
         self.directions = [
@@ -377,6 +380,7 @@ class CCPPRobot:
                 self.path.append(next_pos)
                 self.grid_state[next_pos.y, next_pos.x] = GridState.VISITED.value
                 self.external_input[next_pos.y, next_pos.x] = 0.0
+                self.count_cell_go_through += 1  # ✅ FIXED: Track coverage moves
             elif self.is_deadlock():
                 # Deadlock situation - use backtracking
                 deadlock_count += 1
@@ -396,6 +400,7 @@ class CCPPRobot:
                         if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                             self.grid_state[pos.y, pos.x] = GridState.VISITED.value
                             self.external_input[pos.y, pos.x] = 0.0
+                            self.count_cell_go_through += 1  # ✅ FIXED: Track coverage moves during backtrack
                 else:
                     # Cannot reach backtrack point, remove it
                     if backtrack_point in self.backtrack_list:
@@ -416,6 +421,7 @@ class CCPPRobot:
                                 if self.grid_state[pos.y, pos.x] == GridState.UNVISITED.value:
                                     self.grid_state[pos.y, pos.x] = GridState.VISITED.value
                                     self.external_input[pos.y, pos.x] = 0.0
+                                    self.count_cell_go_through += 1  # ✅ FIXED: Track coverage moves in forced backtrack
                             continue  # Continue coverage
                 break
 
@@ -436,11 +442,18 @@ class CCPPRobot:
 
         # Calculate final coverage rate
         final_coverage_rate = coverage_history[-1] if coverage_history else 0
+        
+        # ✅ FIXED: Calculate overlap rate using correct formula
+        explored_cells = torch.sum(self.grid_state == GridState.VISITED.value).item()
+        overlap_rate = (self.count_cell_go_through / explored_cells - 1) * 100 if explored_cells > 0 else 0.0
 
         return {
             'steps': step,
             'coverage_rate': final_coverage_rate,
             'path_length': len(self.path),
             'deadlock_count': deadlock_count,  # Use local variable, not self.deadlock_count
-            'coverage_history': coverage_history
+            'coverage_history': coverage_history,
+            'overlap_rate': overlap_rate,  # ✅ FIXED: Add overlap rate to results
+            'count_cell_go_through': self.count_cell_go_through,  # For debugging
+            'explored_cells': explored_cells  # For debugging
         }
