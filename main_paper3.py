@@ -544,7 +544,7 @@ class CCPPInBWaveEnvironment:
         # 1. Total Path Length (distance-based như BWave gốc)
         print(f'1. Total Path Length: {self.total_travel_length:.2f}')
 
-        # 2. Overlap Rate (theo công thức BWave paper)
+        # 2. Overlap Rate
         if self.total_free_cells > 0:
             bwave_overlap_rate = (self.total_coverage_cells / self.total_free_cells - 1) * 100
             print(f'2. Overlap Rate: {bwave_overlap_rate:.2f}%')

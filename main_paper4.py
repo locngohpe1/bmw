@@ -12,14 +12,14 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 from project_B.mcta_algorithm import MCTA
 
 parser = argparse.ArgumentParser(description='MCTA Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/denmark.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/scioto2.txt', help='Path to map file')
 parser.add_argument('--speed', type=float, default=1, help='Speed of dynamic obstacles')
-parser.add_argument('--uavs', type=int, default=4, help='Number of UAVs')
+parser.add_argument('--uavs', type=int, default=1, help='Number of UAVs')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity per UAV')
 args = parser.parse_args()
 
 FPS = 0.1
-MOVE_INTERVAL = 0.5  # Seconds per cell move per UAV
+MOVE_INTERVAL = 0.5  #robot speed(cells/s)
 
 # BFS for return to charge
 def bfs_to_charge(start: Tuple[int, int], goal: Tuple[int, int], threat_map: np.ndarray) -> List[Tuple[int, int]]:
@@ -166,23 +166,19 @@ def main():
             running = False
 
     pg.quit()
-
     total_travel_length = sum(uav.total_flight_mileage for uav in mcta.uavs)
     final_Cr, final_Rr, final_Df = mcta.calculate_performance_metrics()
-    print('\nCoverage:\t', total_travel_length * 0.6)
-    print('Advance:\t', total_travel_length * 0.2)
-    print('Return:\t', total_travel_length * 0.2)
     print('-' * 8)
     print('Total Path Length:', total_travel_length)
     print('Time: ', time.time() - last_time)
 
     print('=' * 50)
-    print(f'1. Total Path Length: {total_travel_length:.2f}')
-    print(f'2. Overlap Rate: {final_Rr:.2f}%')
-    print(f'3. Number of Returns: {sum(1 for uav in mcta.uavs if uav.mode == "RETURN")}')
-    print(f'4. Number of Deadlocks: 0')
-    print(f'5. Execution Time: {time.time() - last_time:.3f}s')
-    print(f'6. Coverage Rate: {final_Cr:.2f}%')
+    print(f'1. Coverage Rate (C): {final_Cr:.2f}%')
+    print(f'2. Overlap Rate (O) : {final_Rr:.2f}%')
+    print(f'3. Number of Returns (R): {sum(1 for uav in mcta.uavs if uav.mode == "RETURN")}')
+    print(f'4. Number of Deadlocks (D): 0')
+    print(f'5. Execution Time (T): {time.time() - last_time:.3f}s')
+
     print('=' * 50)
 
     print("\nUAV Details:")

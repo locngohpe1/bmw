@@ -17,7 +17,7 @@ from dynamic_obstacles_manager import DynamicObstaclesManager
 from optimization import get_special_area, return_path_matrix, get_return_path
 
 parser = argparse.ArgumentParser(description='Robot Coverage Path Planning with Dynamic Obstacles')
-parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
+parser.add_argument('--map', type=str, default='map/real_map/mosquito.txt', help='Path to map file')
 parser.add_argument('--speed', type=float, default=1, help='Speed of dynamic obstacles')
 parser.add_argument('--energy', type=float, default=1000, help='Energy capacity')
 args = parser.parse_args()
