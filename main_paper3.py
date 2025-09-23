@@ -217,8 +217,7 @@ class CCPPInBWaveEnvironment:
 
         self.execute_time = time.time()
         self.movement_timer = 0
-        self.ROBOT_MOVE_INTERVAL = 1.0 / self.robot_speed  # 1.0 second per cell
-
+        self.ROBOT_MOVE_INTERVAL = 0.01 / self.robot_speed
         while run and step < max_steps:
             # Check coverage completion early - Paper compliant termination
             total_unvisited = torch.sum(self.ccpp_robot.grid_state == GridState.UNVISITED.value).item()
@@ -271,7 +270,7 @@ class CCPPInBWaveEnvironment:
                 clock.tick(FPS)
                 continue
 
-            # 5. CCPP Algorithm Step (Project D) - Chỉ chạy mỗi 4 frames
+            # 5. CCPP Algorithm Step (Project D) 
             algorithm_step_counter = getattr(self, 'algorithm_step_counter', 0)
             algorithm_step_counter += 1
 
@@ -620,7 +619,7 @@ class CCPPInBWaveEnvironment:
 
 def main():
     parser = argparse.ArgumentParser(description='CCPP Algorithm in BWave Environment')
-    parser.add_argument('--map', type=str, default='map/experiment/scenario4/map_4.txt', help='Path to map file')
+    parser.add_argument('--map', type=str, default='map/real_map/cantwell.txt', help='Path to map file')
     parser.add_argument('--energy', type=float, default=1000,
                         help='Robot energy capacity')
     parser.add_argument('--speed', type=float, default=0.5, help='Dynamic obstacles speed factor')
